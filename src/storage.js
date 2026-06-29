@@ -9,6 +9,7 @@ const dataPath = process.env.ADMIN_DATA_PATH || join(rootDir, "data", "store.jso
 const emptyStore = {
   workEvents: [],
   calendarEvents: [],
+  birthdays: [],
   notificationLog: [],
   settings: {
     serverChanSendKey: ""

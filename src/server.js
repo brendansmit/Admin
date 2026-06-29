@@ -8,6 +8,12 @@ import { markWorkEvent, normalizeWorkEvent, summarizeWork } from "./work-log.js"
 import { dueReminderEvents, formatReminderMessage, normalizeCalendarEvent, upcomingEvents } from "./calendar.js";
 import { sendServerChan } from "./serverchan.js";
 import {
+  dueBirthdayReminders,
+  normalizeBirthday,
+  parseBirthdayImport,
+  upcomingBirthdays
+} from "./birthdays.js";
+import {
   createSession,
   destroySession,
   requireSession,
@@ -130,6 +136,31 @@ function formatArrivalMessage(event) {
   ].join("\n");
 }
 
+function formatCombinedReminderMessage(calendarEvents, birthdays) {
+  const lines = ["InkHeron reminders", ""];
+
+  if (birthdays.length) {
+    lines.push("Birthdays");
+    for (const birthday of birthdays) {
+      const parts = [birthday.next_date, birthday.name, birthday.relationship];
+      if (birthday.tags.length) {
+        parts.push(birthday.tags.join(", "));
+      }
+      if (birthday.notes) {
+        parts.push(birthday.notes);
+      }
+      lines.push(`- ${parts.filter(Boolean).join(" | ")}`);
+    }
+    lines.push("");
+  }
+
+  if (calendarEvents.length) {
+    lines.push(formatReminderMessage(calendarEvents));
+  }
+
+  return lines.join("\n").trim();
+}
+
 async function notifyArrivalIfNeeded(sendKey, event) {
   if (!sendKey || event.duplicate || event.event_type !== "arrive") {
     return { sent: false };
@@ -193,13 +224,38 @@ const server = createServer(async (req, res) => {
       const store = await readStore();
       const summary = summarizeWork(store.workEvents);
       const reminders = upcomingEvents(store.calendarEvents);
+      const birthdayReminders = upcomingBirthdays(store.birthdays);
       sendJson(res, 200, {
         ...summary,
         reminders,
+        birthdays: {
+          total: store.birthdays.length,
+          upcoming: birthdayReminders
+        },
         nextReminder: reminders[0] || null,
         settings: {
           hasServerChanKey: Boolean(store.settings.serverChanSendKey)
         }
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/birthdays" && req.method === "GET") {
+      requireSession(req);
+      const store = await readStore();
+      const query = String(url.searchParams.get("q") || "").trim().toLowerCase();
+      const relationship = String(url.searchParams.get("relationship") || "").trim();
+      const tag = String(url.searchParams.get("tag") || "").trim();
+      const birthdays = store.birthdays
+        .filter((birthday) => !query || birthday.name.toLowerCase().includes(query))
+        .filter((birthday) => !relationship || birthday.relationship === relationship)
+        .filter((birthday) => !tag || birthday.tags.includes(tag))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const tags = [...new Set(store.birthdays.flatMap((birthday) => birthday.tags))].sort();
+      sendJson(res, 200, {
+        birthdays,
+        tags,
+        upcoming: upcomingBirthdays(store.birthdays, new Date(), 30)
       });
       return;
     }
@@ -242,6 +298,72 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/birthdays" && req.method === "POST") {
+      requireSession(req);
+      requireToken(req, adminToken);
+      const body = await readJsonBody(req);
+      const birthday = normalizeBirthday(body);
+      await updateStore((store) => {
+        store.birthdays.push(birthday);
+      });
+      sendJson(res, 201, { birthday });
+      return;
+    }
+
+    if (url.pathname === "/api/birthdays/import" && req.method === "POST") {
+      requireSession(req);
+      requireToken(req, adminToken);
+      const body = await readJsonBody(req);
+      const parsed = parseBirthdayImport(body);
+      const result = await updateStore((store) => {
+        const seen = new Set(store.birthdays.map((birthday) => `${birthday.name.toLowerCase()}:${birthday.birthdate}`));
+        const imported = [];
+        const skipped = [...parsed.skipped];
+
+        for (const birthday of parsed.birthdays) {
+          const key = `${birthday.name.toLowerCase()}:${birthday.birthdate}`;
+          if (seen.has(key)) {
+            skipped.push({ row: null, reason: `Duplicate skipped: ${birthday.name}` });
+            continue;
+          }
+          seen.add(key);
+          store.birthdays.push(birthday);
+          imported.push(birthday);
+        }
+
+        return { imported, skipped };
+      });
+      sendJson(res, 201, result);
+      return;
+    }
+
+    const birthdayPatchMatch = url.pathname.match(/^\/api\/birthdays\/([^/]+)$/);
+    if (birthdayPatchMatch && req.method === "PATCH") {
+      requireSession(req);
+      requireToken(req, adminToken);
+      const body = await readJsonBody(req);
+      const birthdayId = birthdayPatchMatch[1];
+      const result = await updateStore((store) => {
+        const index = store.birthdays.findIndex((birthday) => birthday.id === birthdayId);
+        if (index === -1) {
+          const error = new Error("Birthday not found");
+          error.statusCode = 404;
+          throw error;
+        }
+        const current = store.birthdays[index];
+        const updated = normalizeBirthday({
+          ...current,
+          ...body,
+          id: current.id,
+          created_at: current.created_at
+        });
+        store.birthdays[index] = updated;
+        return updated;
+      });
+      sendJson(res, 200, { birthday: result });
+      return;
+    }
+
     if (url.pathname === "/api/settings/serverchan" && req.method === "POST") {
       requireSession(req);
       requireToken(req, adminToken);
@@ -259,11 +381,12 @@ const server = createServer(async (req, res) => {
       requireToken(req, adminToken);
       const result = await updateStore(async (store) => {
         const dueEvents = dueReminderEvents(store.calendarEvents, store.notificationLog);
-        if (!dueEvents.length) {
+        const dueBirthdays = dueBirthdayReminders(store.birthdays, store.notificationLog);
+        if (!dueEvents.length && !dueBirthdays.length) {
           return { sent: 0, events: [] };
         }
 
-        const message = formatReminderMessage(dueEvents);
+        const message = formatCombinedReminderMessage(dueEvents, dueBirthdays);
         await sendServerChan(store.settings.serverChanSendKey, "InkHeron reminders", message);
         const sentAt = new Date().toISOString();
         const sentOn = sentAt.slice(0, 10);
@@ -277,7 +400,21 @@ const server = createServer(async (req, res) => {
             title: event.title
           });
         }
-        return { sent: dueEvents.length, events: dueEvents };
+        for (const birthday of dueBirthdays) {
+          store.notificationLog.push({
+            id: randomUUID(),
+            birthday_id: birthday.id,
+            reminder_for: birthday.next_date,
+            sent_at: sentAt,
+            sent_on: sentOn,
+            title: birthday.name
+          });
+        }
+        return {
+          sent: dueEvents.length + dueBirthdays.length,
+          events: dueEvents,
+          birthdays: dueBirthdays
+        };
       });
       sendJson(res, 200, result);
       return;

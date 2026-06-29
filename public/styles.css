@@ -81,6 +81,10 @@ button:hover {
   background: var(--accent-strong);
 }
 
+button.secondary {
+  background: #59636b;
+}
+
 .app-shell {
   display: grid;
   min-height: 100vh;
@@ -151,6 +155,10 @@ nav a:hover {
   justify-content: space-between;
   gap: 16px;
   align-items: center;
+}
+
+.topbar > button {
+  background: #59636b;
 }
 
 .eyebrow {
@@ -232,6 +240,15 @@ h2 {
   gap: 16px;
 }
 
+.page-section {
+  display: none;
+}
+
+.page-section.active {
+  display: grid;
+  gap: 16px;
+}
+
 .panel {
   padding: 18px;
 }
@@ -259,7 +276,10 @@ h2 {
 }
 
 .manual-form,
-.calendar-form {
+.calendar-form,
+.filters,
+.birthday-form,
+.import-form {
   display: grid;
   gap: 8px;
   margin-bottom: 14px;
@@ -271,6 +291,48 @@ h2 {
 
 .calendar-form {
   grid-template-columns: minmax(0, 1fr) minmax(150px, 0.8fr);
+}
+
+.filters {
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.7fr) minmax(120px, 0.5fr) auto;
+}
+
+.birthday-form {
+  grid-template-columns: minmax(160px, 1fr) 150px 150px minmax(120px, 0.7fr) minmax(160px, 1fr) auto;
+}
+
+.import-form {
+  grid-template-columns: minmax(260px, 1fr) 160px minmax(150px, 0.6fr) 130px auto;
+  align-items: end;
+}
+
+.drop-zone {
+  display: grid;
+  min-height: 84px;
+  place-items: center;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  margin-bottom: 0;
+  padding: 14px;
+  text-align: center;
+}
+
+.drop-zone.dragging {
+  border-color: var(--accent);
+  background: #eef8f4;
+  color: var(--accent-strong);
+}
+
+.drop-zone input {
+  display: none;
+}
+
+.form-note {
+  min-height: 22px;
+  color: var(--muted);
+  margin-bottom: 0;
 }
 
 .quick-log button:last-child {
@@ -305,6 +367,34 @@ h2 {
 .event-row small {
   color: var(--warn);
   font-weight: 700;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 920px;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+th {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+td input,
+td select {
+  min-width: 120px;
 }
 
 .empty-state strong {
@@ -375,7 +465,7 @@ select {
   }
 
   nav {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   nav a {
@@ -397,7 +487,10 @@ select {
   }
 
   .manual-form,
-  .calendar-form {
+  .calendar-form,
+  .filters,
+  .birthday-form,
+  .import-form {
     grid-template-columns: 1fr;
   }
 }

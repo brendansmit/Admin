@@ -17,10 +17,11 @@
           </div>
         </div>
         <nav>
-          <a href="#overview" class="active">Overview</a>
-          <a href="#time">Time</a>
-          <a href="#calendar">Calendar</a>
-          <a href="#settings">Settings</a>
+          <a href="#overview" data-nav="overview" class="active">Overview</a>
+          <a href="#time" data-nav="time">Time</a>
+          <a href="#birthdays" data-nav="birthdays">Birthdays</a>
+          <a href="#calendar" data-nav="calendar">Calendar</a>
+          <a href="#settings" data-nav="settings">Settings</a>
         </nav>
       </aside>
 
@@ -34,27 +35,49 @@
           <button type="button" id="logoutButton">Log out</button>
         </header>
 
-        <section class="summary-grid" aria-label="Dashboard summary">
-          <article>
-            <span>Today</span>
-            <strong id="todayTotal">0 h 00 min</strong>
-          </article>
-          <article>
-            <span>This week</span>
-            <strong id="weekTotal">0 h 00 min</strong>
-          </article>
-          <article>
-            <span>This month</span>
-            <strong id="monthTotal">0 h 00 min</strong>
-          </article>
-          <article>
-            <span>Next reminder</span>
-            <strong id="nextReminder">Not set</strong>
-          </article>
+        <section class="page-section active" id="overview" data-page="overview">
+          <section class="summary-grid" aria-label="Dashboard summary">
+            <article>
+              <span>Today</span>
+              <strong id="todayTotal">0 h 00 min</strong>
+            </article>
+            <article>
+              <span>This week</span>
+              <strong id="weekTotal">0 h 00 min</strong>
+            </article>
+            <article>
+              <span>This month</span>
+              <strong id="monthTotal">0 h 00 min</strong>
+            </article>
+            <article>
+              <span>Birthdays</span>
+              <strong id="birthdayTotal">0</strong>
+            </article>
+          </section>
+          <section class="two-column">
+            <article class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Next up</p>
+                  <h2>Upcoming birthdays</h2>
+                </div>
+              </div>
+              <div class="event-list" id="overviewBirthdayList"></div>
+            </article>
+            <article class="panel">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Calendar</p>
+                  <h2>Next reminder</h2>
+                </div>
+              </div>
+              <strong id="nextReminder">Not set</strong>
+            </article>
+          </section>
         </section>
 
-        <section class="two-column">
-          <article class="panel" id="time">
+        <section class="page-section" id="time" data-page="time">
+          <article class="panel">
             <div class="panel-heading">
               <div>
                 <p class="eyebrow">Shortcut webhook</p>
@@ -81,8 +104,90 @@
             </div>
             <div class="event-list" id="eventList" aria-live="polite"></div>
           </article>
+        </section>
 
-          <article class="panel" id="calendar">
+        <section class="page-section" id="birthdays" data-page="birthdays">
+          <article class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Birthday import</p>
+                <h2>Upload CSV or Excel</h2>
+              </div>
+            </div>
+            <form class="import-form" id="birthdayImportForm">
+              <label class="drop-zone" for="birthdayFile" id="birthdayDropZone">
+                <input id="birthdayFile" name="file" type="file" accept=".csv,.xlsx,.xls">
+                <span>Drop a CSV or Excel file here, or choose a file</span>
+              </label>
+              <select name="relationship" aria-label="Relationship">
+                <option value="students">Students</option>
+                <option value="colleagues">Colleagues</option>
+                <option value="family">Family</option>
+                <option value="friends">Friends</option>
+                <option value="other">Other</option>
+              </select>
+              <input name="batchTag" placeholder="'27, '26, Year 8" aria-label="Batch tag">
+              <input name="notify_days_before" type="number" min="0" max="30" value="0" aria-label="Days before reminder">
+              <button type="submit">Import birthdays</button>
+            </form>
+            <p class="form-note" id="birthdayImportStatus"></p>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Birthday management</p>
+                <h2>People</h2>
+              </div>
+              <button type="button" id="refreshBirthdaysButton">Refresh</button>
+            </div>
+            <form class="filters" id="birthdayFilters">
+              <input name="q" placeholder="Search name" aria-label="Search birthdays">
+              <select name="relationship" aria-label="Filter relationship">
+                <option value="">All relationships</option>
+                <option value="students">Students</option>
+                <option value="colleagues">Colleagues</option>
+                <option value="family">Family</option>
+                <option value="friends">Friends</option>
+                <option value="other">Other</option>
+              </select>
+              <input name="tag" placeholder="Tag" aria-label="Filter tag">
+              <button type="submit">Filter</button>
+            </form>
+            <form class="birthday-form" id="birthdayForm">
+              <input name="name" placeholder="Name" aria-label="Name" required>
+              <input name="birthdate" type="date" aria-label="Birthdate" required>
+              <select name="relationship" aria-label="Relationship">
+                <option value="students">Students</option>
+                <option value="colleagues">Colleagues</option>
+                <option value="family">Family</option>
+                <option value="friends">Friends</option>
+                <option value="other">Other</option>
+              </select>
+              <input name="tags" placeholder="'27, Year 8" aria-label="Tags">
+              <input name="notes" placeholder="Notes" aria-label="Notes">
+              <button type="submit">Add birthday</button>
+            </form>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Birthday</th>
+                    <th>Relationship</th>
+                    <th>Tags</th>
+                    <th>Notes</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="birthdayTable"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+
+        <section class="page-section" id="calendar" data-page="calendar">
+          <article class="panel">
             <div class="panel-heading">
               <div>
                 <p class="eyebrow">WeChat reminders</p>
@@ -112,7 +217,8 @@
           </article>
         </section>
 
-        <section class="panel settings-panel" id="settings">
+        <section class="page-section" id="settings" data-page="settings">
+        <article class="panel settings-panel">
           <div>
             <p class="eyebrow">ServerChan</p>
             <h2>Notification key</h2>
@@ -127,6 +233,7 @@
               <button type="submit">Save</button>
             </div>
           </form>
+        </article>
         </section>
       </section>
     </main>
