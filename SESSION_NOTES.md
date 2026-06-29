@@ -17,5 +17,6 @@
 - Request: push the admin dashboard to GitHub and deploy it to `admin.inkheron.app` for tomorrow's iPhone Shortcut testing.
 - Done: pushed the current Admin repo HEAD to GitHub `main` and branch `codex/admin-dashboard`.
 - Done: deployed the app to the droplet at `/opt/admin-platform`, started it with PM2 as `admin-platform` on port `3474`, added nginx config for `admin.inkheron.app` and issued a Let's Encrypt certificate with certbot.
+- Done: added remote cron job `10 0 * * * /opt/admin-platform/run-reminders.sh`, which runs daily at 08:10 China time and calls `/api/notifications/run`.
 - Decision: generated strong live `ADMIN_TOKEN` and `WEBHOOK_TOKEN`, stored only in remote PM2 config and local temporary note `/private/tmp/inkheron-admin-live-secrets.txt`, not in Git.
-- Verification: `https://admin.inkheron.app/api/health` returned OK, `/api/dashboard` returned an empty dashboard, HTTP redirected to HTTPS and unauthenticated `/api/work-log` returned `401`.
+- Verification: `https://admin.inkheron.app/api/health` returned OK, `/api/dashboard` returned an empty dashboard, HTTP redirected to HTTPS, unauthenticated `/api/work-log` returned `401` and the cron script dry run returned `{"sent":0,"events":[]}`.
