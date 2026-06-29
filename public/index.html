@@ -61,10 +61,15 @@
               </div>
               <button type="button" id="refreshButton">Refresh</button>
             </div>
-            <div class="empty-state">
+            <div class="quick-log">
+              <button type="button" data-event="arrive">Arrive now</button>
+              <button type="button" data-event="leave">Leave now</button>
+            </div>
+            <div class="empty-state" id="eventEmpty">
               <strong>No events yet</strong>
               <p>Arrive and leave posts from Shortcuts or NFC tags will appear here.</p>
             </div>
+            <div class="event-list" id="eventList" aria-live="polite"></div>
           </article>
 
           <article class="panel" id="calendar">
@@ -90,6 +95,8 @@
           </div>
           <form id="settingsForm">
             <label for="serverChanKey">SendKey</label>
+            <label for="adminToken">Admin token</label>
+            <input id="adminToken" name="adminToken" type="password" autocomplete="off" placeholder="dev-admin-token">
             <div class="inline-form">
               <input id="serverChanKey" name="serverChanKey" type="password" autocomplete="off" placeholder="SCT...">
               <button type="submit">Save</button>
@@ -101,4 +108,3 @@
     <script src="/app.js" type="module"></script>
   </body>
 </html>
-

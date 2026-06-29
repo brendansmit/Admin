@@ -6,4 +6,5 @@
 - Decision: cloned the empty `brendansmit/Admin` repo into the writable workspace and created branch `codex/admin-dashboard`.
 - Done: scaffolded a dependency-light Node admin app with a static dashboard shell, health API, ServerChan key placeholder and ignored runtime data.
 - Verification: `node --check src/server.js` passed and `GET /api/health` returned OK from the local server.
-
+- Done: added JSON persistence, protected `/api/work-log`, manual dashboard event creation, duplicate detection and session pairing.
+- Verification: work-log unit tests passed under bundled Node. API smoke test posted 08:02 arrive and 16:41 leave, then `/api/dashboard` returned 519 minutes.

@@ -211,6 +211,47 @@ h2 {
   padding: 22px;
 }
 
+.quick-log {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.quick-log button:last-child {
+  background: #59636b;
+}
+
+.event-list {
+  display: grid;
+  gap: 8px;
+}
+
+.event-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.event-row strong,
+.event-row span {
+  display: block;
+}
+
+.event-row span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.event-row small {
+  color: var(--warn);
+  font-weight: 700;
+}
+
 .empty-state strong {
   display: block;
   color: var(--ink);
@@ -238,6 +279,10 @@ label {
   color: var(--muted);
   font-weight: 700;
   margin-bottom: 8px;
+}
+
+#adminToken {
+  margin-bottom: 12px;
 }
 
 .inline-form {
@@ -295,4 +340,3 @@ input {
     grid-template-columns: 1fr;
   }
 }
-
