@@ -157,11 +157,15 @@ function summarizeWork(events, now = new Date()) {
   const weekMinutes = completeSessions
     .filter((session) => new Date(session.start) >= weekStart)
     .reduce((total, session) => total + session.duration_minutes, 0);
+  const monthMinutes = completeSessions
+    .filter((session) => session.start?.slice(0, 7) === today.slice(0, 7))
+    .reduce((total, session) => total + session.duration_minutes, 0);
   const openSession = sessions.findLast((session) => session.status === "open") || null;
 
   return {
     todayMinutes,
     weekMinutes,
+    monthMinutes,
     openSession,
     sessions: sessions.slice(-20).reverse(),
     events: [...events].slice(-30).reverse()

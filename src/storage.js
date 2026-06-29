@@ -9,6 +9,7 @@ const dataPath = process.env.ADMIN_DATA_PATH || join(rootDir, "data", "store.jso
 const emptyStore = {
   workEvents: [],
   calendarEvents: [],
+  notificationLog: [],
   settings: {
     serverChanSendKey: ""
   }
@@ -49,4 +50,3 @@ async function updateStore(mutator) {
 }
 
 export { readStore, updateStore };
-

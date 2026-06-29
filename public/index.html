@@ -43,8 +43,8 @@
             <strong id="weekTotal">0 h 00 min</strong>
           </article>
           <article>
-            <span>Open session</span>
-            <strong id="openSession">None</strong>
+            <span>This month</span>
+            <strong id="monthTotal">0 h 00 min</strong>
           </article>
           <article>
             <span>Next reminder</span>
@@ -65,6 +65,15 @@
               <button type="button" data-event="arrive">Arrive now</button>
               <button type="button" data-event="leave">Leave now</button>
             </div>
+            <form class="manual-form" id="manualEventForm">
+              <select name="event" aria-label="Event type">
+                <option value="arrive">Arrive</option>
+                <option value="leave">Leave</option>
+              </select>
+              <input name="location" value="work" aria-label="Location">
+              <input name="occurred_at" type="datetime-local" aria-label="Occurred at">
+              <button type="submit">Add correction</button>
+            </form>
             <div class="empty-state" id="eventEmpty">
               <strong>No events yet</strong>
               <p>Arrive and leave posts from Shortcuts or NFC tags will appear here.</p>
@@ -78,12 +87,27 @@
                 <p class="eyebrow">WeChat reminders</p>
                 <h2>Calendar</h2>
               </div>
-              <button type="button">Add event</button>
+              <button type="button" id="runRemindersButton">Run reminders</button>
             </div>
-            <div class="empty-state">
+            <form class="calendar-form" id="calendarForm">
+              <input name="title" placeholder="Name or event" aria-label="Title" required>
+              <select name="category" aria-label="Category">
+                <option value="staff_birthday">Staff birthday</option>
+                <option value="student_birthday">Student birthday</option>
+                <option value="school_event">School event</option>
+                <option value="personal">Personal</option>
+                <option value="other">Other</option>
+              </select>
+              <input name="date" type="date" aria-label="Date" required>
+              <input name="audience" placeholder="Staff, Year 7, Year 8" aria-label="Audience">
+              <input name="notify_days_before" type="number" min="0" max="30" value="0" aria-label="Days before">
+              <button type="submit">Add</button>
+            </form>
+            <div class="empty-state" id="reminderEmpty">
               <strong>No reminders yet</strong>
               <p>Add staff birthdays, student year-group birthdays and school events here.</p>
             </div>
+            <div class="event-list" id="reminderList" aria-live="polite"></div>
           </article>
         </section>
 

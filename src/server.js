@@ -1,9 +1,12 @@
 import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readStore, updateStore } from "./storage.js";
 import { markWorkEvent, normalizeWorkEvent, summarizeWork } from "./work-log.js";
+import { dueReminderEvents, formatReminderMessage, normalizeCalendarEvent, upcomingEvents } from "./calendar.js";
+import { sendServerChan } from "./serverchan.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const rootDir = join(__dirname, "..");
@@ -106,8 +109,11 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/api/dashboard" && req.method === "GET") {
       const store = await readStore();
       const summary = summarizeWork(store.workEvents);
+      const reminders = upcomingEvents(store.calendarEvents);
       sendJson(res, 200, {
         ...summary,
+        reminders,
+        nextReminder: reminders[0] || null,
         settings: {
           hasServerChanKey: Boolean(store.settings.serverChanSendKey)
         }
@@ -130,6 +136,56 @@ const server = createServer(async (req, res) => {
         markWorkEvent(store, normalizeWorkEvent({ ...body, source: body.source || "manual_admin" }))
       );
       sendJson(res, 201, { event });
+      return;
+    }
+
+    if (url.pathname === "/api/calendar-events" && req.method === "POST") {
+      requireToken(req, adminToken);
+      const body = await readJsonBody(req);
+      const event = normalizeCalendarEvent(body);
+      await updateStore((store) => {
+        store.calendarEvents.push(event);
+      });
+      sendJson(res, 201, { event });
+      return;
+    }
+
+    if (url.pathname === "/api/settings/serverchan" && req.method === "POST") {
+      requireToken(req, adminToken);
+      const body = await readJsonBody(req);
+      const sendKey = String(body.sendKey || "").trim();
+      await updateStore((store) => {
+        store.settings.serverChanSendKey = sendKey;
+      });
+      sendJson(res, 200, { ok: true, hasServerChanKey: Boolean(sendKey) });
+      return;
+    }
+
+    if (url.pathname === "/api/notifications/run" && req.method === "POST") {
+      requireToken(req, adminToken);
+      const result = await updateStore(async (store) => {
+        const dueEvents = dueReminderEvents(store.calendarEvents, store.notificationLog);
+        if (!dueEvents.length) {
+          return { sent: 0, events: [] };
+        }
+
+        const message = formatReminderMessage(dueEvents);
+        await sendServerChan(store.settings.serverChanSendKey, "InkHeron reminders", message);
+        const sentAt = new Date().toISOString();
+        const sentOn = sentAt.slice(0, 10);
+        for (const event of dueEvents) {
+          store.notificationLog.push({
+            id: randomUUID(),
+            calendar_event_id: event.id,
+            reminder_for: event.date,
+            sent_at: sentAt,
+            sent_on: sentOn,
+            title: event.title
+          });
+        }
+        return { sent: dueEvents.length, events: dueEvents };
+      });
+      sendJson(res, 200, result);
       return;
     }
 

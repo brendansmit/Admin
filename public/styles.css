@@ -218,6 +218,21 @@ h2 {
   margin-bottom: 14px;
 }
 
+.manual-form,
+.calendar-form {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.manual-form {
+  grid-template-columns: 110px minmax(0, 1fr) minmax(180px, 1fr) auto;
+}
+
+.calendar-form {
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.8fr);
+}
+
 .quick-log button:last-child {
   background: #59636b;
 }
@@ -299,6 +314,14 @@ input {
   padding: 0 12px;
 }
 
+select {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  padding: 0 10px;
+}
+
 @media (max-width: 880px) {
   .app-shell,
   .two-column,
@@ -331,6 +354,11 @@ input {
 
   .summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .manual-form,
+  .calendar-form {
+    grid-template-columns: 1fr;
   }
 }
 

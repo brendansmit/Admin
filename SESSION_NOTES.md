@@ -8,3 +8,5 @@
 - Verification: `node --check src/server.js` passed and `GET /api/health` returned OK from the local server.
 - Done: added JSON persistence, protected `/api/work-log`, manual dashboard event creation, duplicate detection and session pairing.
 - Verification: work-log unit tests passed under bundled Node. API smoke test posted 08:02 arrive and 16:41 leave, then `/api/dashboard` returned 519 minutes.
+- Done: added calendar reminder storage, ServerChan key saving, due-reminder selection, notification runner endpoint, month totals and dashboard forms for manual corrections and reminders.
+- Verification: calendar and work-log unit tests passed under bundled Node. API smoke test saved a fake ServerChan key, added a staff birthday and returned it as `nextReminder`.
