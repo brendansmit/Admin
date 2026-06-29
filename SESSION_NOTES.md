@@ -46,3 +46,9 @@
 - Cause: `/login` returned `500` because the login route passed a shallow-copied request object into the static-file helper, losing `headers`.
 - Done: added a `pathname` override option to `serveStatic()` and used the real request object for `/login`.
 - Verification: local syntax and unit tests passed. Local `/login` smoke test returned `200 OK` with login HTML.
+
+## 2026-06-30
+
+- Request: change the admin dashboard password.
+- Done: updated the live PM2 `ADMIN_PASSWORD`, restarted `admin-platform` and updated the local temp secrets note at `/private/tmp/inkheron-admin-live-secrets.txt`.
+- Verification: old password now returns `401`, new password returns `200`, `/api/health` is OK and authenticated `/api/dashboard` works.
