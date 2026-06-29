@@ -26,4 +26,4 @@
 - Request: add a temporary ServerChan notification for arrival so tomorrow's geofence test is visible without opening the dashboard.
 - Done: added arrive-only notification after successful `/api/work-log` saves. Duplicate arrivals and leave events do not notify. ServerChan failures are logged but do not block work logging.
 - Decision: because the live dashboard had no ServerChan key saved, use the previously supplied ServerChan key server-side for the test and still recommend rotating it later.
-- Verification: syntax check and all unit tests passed. Local smoke test posted an arrive event and returned a saved event with notification skipped when no key was configured.
+- Verification: syntax check and all unit tests passed. Local smoke test posted an arrive event and returned a saved event with notification skipped when no key was configured. Live app returned healthy and confirmed `hasServerChanKey: true`. Did not fire a live arrive test because it would send the real WeChat notification and add a fake work event.
