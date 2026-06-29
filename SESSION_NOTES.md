@@ -39,3 +39,10 @@
 - Verification: local smoke test confirmed `/api/notifications/run` rejects admin-token-only calls without a session and accepts the same call when `x-cron-token` is present.
 - Done: deployed the password wall, navigation, birthday import/management and cron-token reminder runner to the droplet. Updated PM2 env with generated `ADMIN_PASSWORD`, `SESSION_SECRET` and `REMINDER_CRON_TOKEN`; updated `/opt/admin-platform/run-reminders.sh`.
 - Verification: live `/` redirects to `/login`, unauthenticated `/api/dashboard` returns `401`, login succeeds with the generated admin password, authenticated dashboard and birthday APIs return data, public `/api/notifications/run` rejects admin-token-only calls and the remote cron dry run returns `{"sent":0,"events":[]}`.
+
+## 2026-06-30
+
+- Request: `admin.inkheron.app` was down.
+- Cause: `/login` returned `500` because the login route passed a shallow-copied request object into the static-file helper, losing `headers`.
+- Done: added a `pathname` override option to `serveStatic()` and used the real request object for `/login`.
+- Verification: local syntax and unit tests passed. Local `/login` smoke test returned `200 OK` with login HTML.

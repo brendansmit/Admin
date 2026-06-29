@@ -93,8 +93,8 @@ async function readJsonBody(req) {
   }
 }
 
-async function serveStatic(req, res, { authenticated = false } = {}) {
-  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+async function serveStatic(req, res, { authenticated = false, pathname = "" } = {}) {
+  const url = new URL(pathname || req.url, `http://${req.headers.host || "localhost"}`);
   const cleanPath = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
   const relativePath = cleanPath === "/" ? "index.html" : cleanPath.replace(/^[/\\]/, "");
 
@@ -433,7 +433,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/login" || url.pathname === "/login.html") {
-      await serveStatic({ ...req, url: "/login.html" }, res, { authenticated: true });
+      await serveStatic(req, res, { authenticated: true, pathname: "/login.html" });
       return;
     }
 
