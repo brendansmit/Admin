@@ -93,6 +93,38 @@ async function serveStatic(req, res) {
   }
 }
 
+function formatChinaTime(isoDate) {
+  return new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Shanghai"
+  }).format(new Date(isoDate));
+}
+
+function formatArrivalMessage(event) {
+  return [
+    "Arrived at work",
+    "",
+    `Location: ${event.location}`,
+    `Device: ${event.device || "Unknown"}`,
+    `Time: ${formatChinaTime(event.occurred_at)}`
+  ].join("\n");
+}
+
+async function notifyArrivalIfNeeded(sendKey, event) {
+  if (!sendKey || event.duplicate || event.event_type !== "arrive") {
+    return { sent: false };
+  }
+
+  try {
+    await sendServerChan(sendKey, "Arrived at work", formatArrivalMessage(event));
+    return { sent: true };
+  } catch (error) {
+    console.error("ServerChan arrival notification failed:", error.message);
+    return { sent: false, error: "serverchan_failed" };
+  }
+}
+
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
@@ -124,8 +156,15 @@ const server = createServer(async (req, res) => {
     if (url.pathname === "/api/work-log" && req.method === "POST") {
       requireToken(req, webhookToken);
       const body = await readJsonBody(req);
-      const event = await updateStore((store) => markWorkEvent(store, normalizeWorkEvent(body)));
-      sendJson(res, event.duplicate ? 202 : 201, { event });
+      const result = await updateStore((store) => {
+        const event = markWorkEvent(store, normalizeWorkEvent(body));
+        return {
+          event,
+          serverChanSendKey: store.settings.serverChanSendKey
+        };
+      });
+      const notification = await notifyArrivalIfNeeded(result.serverChanSendKey, result.event);
+      sendJson(res, result.event.duplicate ? 202 : 201, { event: result.event, notification });
       return;
     }
 

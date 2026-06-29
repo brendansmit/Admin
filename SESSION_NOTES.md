@@ -20,3 +20,10 @@
 - Done: added remote cron job `10 0 * * * /opt/admin-platform/run-reminders.sh`, which runs daily at 08:10 China time and calls `/api/notifications/run`.
 - Decision: generated strong live `ADMIN_TOKEN` and `WEBHOOK_TOKEN`, stored only in remote PM2 config and local temporary note `/private/tmp/inkheron-admin-live-secrets.txt`, not in Git.
 - Verification: `https://admin.inkheron.app/api/health` returned OK, `/api/dashboard` returned an empty dashboard, HTTP redirected to HTTPS, unauthenticated `/api/work-log` returned `401` and the cron script dry run returned `{"sent":0,"events":[]}`.
+
+## 2026-06-29
+
+- Request: add a temporary ServerChan notification for arrival so tomorrow's geofence test is visible without opening the dashboard.
+- Done: added arrive-only notification after successful `/api/work-log` saves. Duplicate arrivals and leave events do not notify. ServerChan failures are logged but do not block work logging.
+- Decision: because the live dashboard had no ServerChan key saved, use the previously supplied ServerChan key server-side for the test and still recommend rotating it later.
+- Verification: syntax check and all unit tests passed. Local smoke test posted an arrive event and returned a saved event with notification skipped when no key was configured.
