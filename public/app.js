@@ -14,6 +14,7 @@ const calendarForm = document.querySelector("#calendarForm");
 const reminderList = document.querySelector("#reminderList");
 const reminderEmpty = document.querySelector("#reminderEmpty");
 const runRemindersButton = document.querySelector("#runRemindersButton");
+const logoutButton = document.querySelector("#logoutButton");
 
 adminTokenInput.value = localStorage.getItem("adminToken") || "dev-admin-token";
 
@@ -50,6 +51,10 @@ async function checkHealth() {
 
 async function loadDashboard() {
   const response = await fetch("/api/dashboard");
+  if (response.status === 401) {
+    window.location.href = "/login";
+    return;
+  }
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
   }
@@ -230,6 +235,11 @@ runRemindersButton.addEventListener("click", () => {
     apiStatus.textContent = "Reminder run failed";
     apiStatus.className = "status-pill bad";
   });
+});
+
+logoutButton.addEventListener("click", async () => {
+  await fetch("/api/logout", { method: "POST" });
+  window.location.href = "/login";
 });
 
 checkHealth();

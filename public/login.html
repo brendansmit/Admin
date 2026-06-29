@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>InkHeron Admin Login</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body class="login-body">
+    <main class="login-shell">
+      <form class="login-panel" id="loginForm">
+        <div class="brand login-brand">
+          <span class="brand-mark">IH</span>
+          <div>
+            <strong>InkHeron</strong>
+            <span>Admin</span>
+          </div>
+        </div>
+        <h1>Admin login</h1>
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+        <button type="submit">Log in</button>
+        <p class="login-error" id="loginError" role="alert"></p>
+      </form>
+    </main>
+    <script src="/login.js" type="module"></script>
+  </body>
+</html>
+

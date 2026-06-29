@@ -22,6 +22,46 @@ body {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+.login-body {
+  background: #10231f;
+}
+
+.login-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 20px;
+}
+
+.login-panel {
+  display: grid;
+  width: min(100%, 420px);
+  gap: 14px;
+  border: 1px solid #2d473f;
+  border-radius: 8px;
+  background: #fff;
+  padding: 28px;
+}
+
+.login-brand {
+  margin-bottom: 10px;
+  color: var(--ink);
+}
+
+.login-brand span:last-child {
+  color: var(--muted);
+}
+
+.login-panel h1 {
+  font-size: 1.55rem;
+}
+
+.login-error {
+  min-height: 22px;
+  color: var(--warn);
+  margin-bottom: 0;
+}
+
 button,
 input {
   font: inherit;

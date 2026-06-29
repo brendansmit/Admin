@@ -27,3 +27,9 @@
 - Done: added arrive-only notification after successful `/api/work-log` saves. Duplicate arrivals and leave events do not notify. ServerChan failures are logged but do not block work logging.
 - Decision: because the live dashboard had no ServerChan key saved, use the previously supplied ServerChan key server-side for the test and still recommend rotating it later.
 - Verification: syntax check and all unit tests passed. Local smoke test posted an arrive event and returned a saved event with notification skipped when no key was configured. Live app returned healthy and confirmed `hasServerChanKey: true`. Did not fire a live arrive test because it would send the real WeChat notification and add a fake work event.
+
+## 2026-06-29
+
+- Request: add a single-password wall, fix navigation and build birthday CSV/Excel import and management.
+- Done: added server-side single-password login with signed HttpOnly session cookie, logout and session checks. `/api/work-log` remains open only to the Shortcut bearer token. Dashboard static files and dashboard APIs now require login, with admin-token checks retained on protected write APIs.
+- Verification: syntax check and unit tests passed. Local smoke test confirmed unauthenticated `/` redirects to `/login`, `/api/dashboard` returns `401`, login sets a session cookie, authenticated `/api/dashboard` works and `/api/work-log` still accepts bearer-token Shortcut posts without a login session.

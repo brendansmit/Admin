@@ -7,6 +7,14 @@ import { readStore, updateStore } from "./storage.js";
 import { markWorkEvent, normalizeWorkEvent, summarizeWork } from "./work-log.js";
 import { dueReminderEvents, formatReminderMessage, normalizeCalendarEvent, upcomingEvents } from "./calendar.js";
 import { sendServerChan } from "./serverchan.js";
+import {
+  createSession,
+  destroySession,
+  requireSession,
+  sessionCookie,
+  sessionFromRequest,
+  validatePassword
+} from "./auth.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const rootDir = join(__dirname, "..");
@@ -32,6 +40,11 @@ function sendJson(res, statusCode, payload) {
 function sendText(res, statusCode, message) {
   res.writeHead(statusCode, { "content-type": "text/plain; charset=utf-8" });
   res.end(message);
+}
+
+function redirect(res, location) {
+  res.writeHead(302, { location });
+  res.end();
 }
 
 function bearerToken(req) {
@@ -67,10 +80,16 @@ async function readJsonBody(req) {
   }
 }
 
-async function serveStatic(req, res) {
+async function serveStatic(req, res, { authenticated = false } = {}) {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   const cleanPath = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
   const relativePath = cleanPath === "/" ? "index.html" : cleanPath.replace(/^[/\\]/, "");
+
+  if (!authenticated && !["login.html", "login.js", "styles.css"].includes(relativePath)) {
+    redirect(res, "/login");
+    return;
+  }
+
   const filePath = join(publicDir, relativePath);
 
   if (!filePath.startsWith(publicDir)) {
@@ -138,7 +157,39 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/session" && req.method === "GET") {
+      sendJson(res, 200, { authenticated: Boolean(sessionFromRequest(req)) });
+      return;
+    }
+
+    if (url.pathname === "/api/login" && req.method === "POST") {
+      const body = await readJsonBody(req);
+      if (!validatePassword(body.password)) {
+        sendJson(res, 401, { error: "invalid_password" });
+        return;
+      }
+
+      const session = createSession();
+      res.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "set-cookie": sessionCookie(req, session)
+      });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    if (url.pathname === "/api/logout" && req.method === "POST") {
+      destroySession(req);
+      res.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "set-cookie": sessionCookie(req, "", 0)
+      });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
     if (url.pathname === "/api/dashboard" && req.method === "GET") {
+      requireSession(req);
       const store = await readStore();
       const summary = summarizeWork(store.workEvents);
       const reminders = upcomingEvents(store.calendarEvents);
@@ -169,6 +220,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/work-events" && req.method === "POST") {
+      requireSession(req);
       requireToken(req, adminToken);
       const body = await readJsonBody(req);
       const event = await updateStore((store) =>
@@ -179,6 +231,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/calendar-events" && req.method === "POST") {
+      requireSession(req);
       requireToken(req, adminToken);
       const body = await readJsonBody(req);
       const event = normalizeCalendarEvent(body);
@@ -190,6 +243,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/settings/serverchan" && req.method === "POST") {
+      requireSession(req);
       requireToken(req, adminToken);
       const body = await readJsonBody(req);
       const sendKey = String(body.sendKey || "").trim();
@@ -201,6 +255,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/notifications/run" && req.method === "POST") {
+      requireSession(req);
       requireToken(req, adminToken);
       const result = await updateStore(async (store) => {
         const dueEvents = dueReminderEvents(store.calendarEvents, store.notificationLog);
@@ -233,7 +288,12 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    await serveStatic(req, res);
+    if (url.pathname === "/login" || url.pathname === "/login.html") {
+      await serveStatic({ ...req, url: "/login.html" }, res, { authenticated: true });
+      return;
+    }
+
+    await serveStatic(req, res, { authenticated: Boolean(sessionFromRequest(req)) });
   } catch (error) {
     if (error.statusCode) {
       sendJson(res, error.statusCode, { error: error.message });
