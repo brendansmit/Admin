@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>InkHeron Admin</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="Admin navigation">
+        <div class="brand">
+          <span class="brand-mark">IH</span>
+          <div>
+            <strong>InkHeron</strong>
+            <span>Admin</span>
+          </div>
+        </div>
+        <nav>
+          <a href="#overview" class="active">Overview</a>
+          <a href="#time">Time</a>
+          <a href="#calendar">Calendar</a>
+          <a href="#settings">Settings</a>
+        </nav>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">admin.inkheron.app</p>
+            <h1>Work time and reminders</h1>
+          </div>
+          <div class="status-pill" id="apiStatus">Checking server</div>
+        </header>
+
+        <section class="summary-grid" aria-label="Dashboard summary">
+          <article>
+            <span>Today</span>
+            <strong id="todayTotal">0 h 00 min</strong>
+          </article>
+          <article>
+            <span>This week</span>
+            <strong id="weekTotal">0 h 00 min</strong>
+          </article>
+          <article>
+            <span>Open session</span>
+            <strong id="openSession">None</strong>
+          </article>
+          <article>
+            <span>Next reminder</span>
+            <strong id="nextReminder">Not set</strong>
+          </article>
+        </section>
+
+        <section class="two-column">
+          <article class="panel" id="time">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Shortcut webhook</p>
+                <h2>Time log</h2>
+              </div>
+              <button type="button" id="refreshButton">Refresh</button>
+            </div>
+            <div class="empty-state">
+              <strong>No events yet</strong>
+              <p>Arrive and leave posts from Shortcuts or NFC tags will appear here.</p>
+            </div>
+          </article>
+
+          <article class="panel" id="calendar">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">WeChat reminders</p>
+                <h2>Calendar</h2>
+              </div>
+              <button type="button">Add event</button>
+            </div>
+            <div class="empty-state">
+              <strong>No reminders yet</strong>
+              <p>Add staff birthdays, student year-group birthdays and school events here.</p>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel settings-panel" id="settings">
+          <div>
+            <p class="eyebrow">ServerChan</p>
+            <h2>Notification key</h2>
+            <p>Store the key here once it has been rotated. It is never written into source code.</p>
+          </div>
+          <form id="settingsForm">
+            <label for="serverChanKey">SendKey</label>
+            <div class="inline-form">
+              <input id="serverChanKey" name="serverChanKey" type="password" autocomplete="off" placeholder="SCT...">
+              <button type="submit">Save</button>
+            </div>
+          </form>
+        </section>
+      </section>
+    </main>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
+
