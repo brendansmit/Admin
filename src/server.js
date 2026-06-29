@@ -29,6 +29,7 @@ const publicDir = join(rootDir, "public");
 const port = Number.parseInt(process.env.PORT || "3468", 10);
 const webhookToken = process.env.WEBHOOK_TOKEN || "dev-webhook-token";
 const adminToken = process.env.ADMIN_TOKEN || "dev-admin-token";
+const reminderCronToken = process.env.REMINDER_CRON_TOKEN || "dev-cron-token";
 
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -64,6 +65,12 @@ function requireToken(req, expectedToken) {
     const error = new Error("Unauthorized");
     error.statusCode = 401;
     throw error;
+  }
+}
+
+function requireSessionUnlessCron(req) {
+  if (req.headers["x-cron-token"] !== reminderCronToken) {
+    requireSession(req);
   }
 }
 
@@ -377,7 +384,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/notifications/run" && req.method === "POST") {
-      requireSession(req);
+      requireSessionUnlessCron(req);
       requireToken(req, adminToken);
       const result = await updateStore(async (store) => {
         const dueEvents = dueReminderEvents(store.calendarEvents, store.notificationLog);
