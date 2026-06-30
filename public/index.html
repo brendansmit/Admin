@@ -99,10 +99,14 @@
               <button type="submit">Add correction</button>
             </form>
             <div class="empty-state" id="eventEmpty">
-              <strong>No events yet</strong>
-              <p>Arrive and leave posts from Shortcuts or NFC tags will appear here.</p>
+              <strong>No sessions yet</strong>
+              <p>Arrive and leave posts from Shortcuts or NFC tags will be paired here.</p>
             </div>
             <div class="event-list" id="eventList" aria-live="polite"></div>
+            <details class="raw-events">
+              <summary>Raw webhook events</summary>
+              <div class="event-list" id="rawEventList"></div>
+            </details>
           </article>
         </section>
 

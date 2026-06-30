@@ -8,6 +8,7 @@ const birthdayTotal = document.querySelector("#birthdayTotal");
 const nextReminder = document.querySelector("#nextReminder");
 const overviewBirthdayList = document.querySelector("#overviewBirthdayList");
 const eventList = document.querySelector("#eventList");
+const rawEventList = document.querySelector("#rawEventList");
 const eventEmpty = document.querySelector("#eventEmpty");
 const refreshButton = document.querySelector("#refreshButton");
 const quickLogButtons = document.querySelectorAll("[data-event]");
@@ -59,6 +60,69 @@ function formatDateTime(value) {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+function sessionStatusLabel(session) {
+  const labels = {
+    complete: "Complete",
+    open: "Still at work",
+    missing_leave: "Missing leave",
+    missing_arrive: "Missing arrive",
+    invalid_order: "Invalid order"
+  };
+  return labels[session.status] || session.status;
+}
+
+function renderSessionRow(session) {
+  const row = document.createElement("div");
+  row.className = `event-row session-row ${session.status}`;
+
+  const detail = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = session.status === "complete"
+    ? `${formatDateTime(session.start)} to ${formatDateTime(session.end)}`
+    : sessionStatusLabel(session);
+  const meta = document.createElement("span");
+  if (session.status === "open") {
+    meta.textContent = `Arrived ${formatDateTime(session.start)} at ${session.location}`;
+  } else if (session.status === "missing_arrive") {
+    meta.textContent = `Leave ${formatDateTime(session.end)} at ${session.location}`;
+  } else {
+    meta.textContent = `${session.location} | ${sessionStatusLabel(session)}`;
+  }
+  detail.append(title, meta);
+
+  const side = document.createElement("small");
+  side.textContent = session.warning || (session.duration_minutes ? formatMinutes(session.duration_minutes) : "");
+  row.append(detail, side);
+  return row;
+}
+
+function renderRawEventRow(event) {
+  const row = document.createElement("div");
+  row.className = `event-row raw-event${event.ignored ? " ignored" : ""}`;
+  const detail = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = `${event.event_type} at ${event.location}${event.ignored ? " (ignored)" : ""}`;
+  const meta = document.createElement("span");
+  meta.textContent = `${formatDateTime(event.occurred_at)} from ${event.source}`;
+  detail.append(title, meta);
+
+  const actions = document.createElement("div");
+  actions.className = "row-actions";
+  const warning = document.createElement("small");
+  warning.textContent = event.warning || (event.duplicate ? "Duplicate" : "");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary compact";
+  button.textContent = event.ignored ? "Restore" : "Ignore";
+  button.addEventListener("click", () => setWorkEventIgnored(event.id, !event.ignored).catch(() => {
+    apiStatus.textContent = "Event update failed";
+    apiStatus.className = "status-pill bad";
+  }));
+  actions.append(warning, button);
+  row.append(detail, actions);
+  return row;
 }
 
 function showPage(pageName) {
@@ -122,23 +186,9 @@ async function loadDashboard() {
   nextReminder.textContent = dashboard.nextReminder ? `${dashboard.nextReminder.date} ${dashboard.nextReminder.title}` : "Not set";
   renderCompactBirthdays(dashboard.birthdays.upcoming);
 
-  eventEmpty.hidden = dashboard.events.length > 0;
-  eventList.replaceChildren(
-    ...dashboard.events.map((event) => {
-      const row = document.createElement("div");
-      row.className = "event-row";
-      const detail = document.createElement("div");
-      const title = document.createElement("strong");
-      title.textContent = `${event.event_type} at ${event.location}`;
-      const meta = document.createElement("span");
-      meta.textContent = `${formatDateTime(event.occurred_at)} from ${event.source}`;
-      detail.append(title, meta);
-      const warning = document.createElement("small");
-      warning.textContent = event.warning || (event.duplicate ? "Duplicate" : "");
-      row.append(detail, warning);
-      return row;
-    })
-  );
+  eventEmpty.hidden = dashboard.sessions.length > 0;
+  eventList.replaceChildren(...dashboard.sessions.map(renderSessionRow));
+  rawEventList.replaceChildren(...dashboard.events.map(renderRawEventRow));
 
   reminderEmpty.hidden = dashboard.reminders.length > 0;
   reminderList.replaceChildren(
@@ -260,6 +310,24 @@ async function addManualEvent(payload) {
     method: "POST",
     headers: authHeaders({ "content-type": "application/json" }),
     body: JSON.stringify(payload)
+  });
+
+  if (handleUnauthorized(response)) {
+    return;
+  }
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  await loadDashboard();
+}
+
+async function setWorkEventIgnored(id, ignored) {
+  localStorage.setItem("adminToken", adminTokenInput.value);
+  const response = await fetch(`/api/work-events/${id}`, {
+    method: "PATCH",
+    headers: authHeaders({ "content-type": "application/json" }),
+    body: JSON.stringify({ ignored })
   });
 
   if (handleUnauthorized(response)) {

@@ -58,3 +58,11 @@
 - Request: troubleshoot why the iPhone Shortcuts arrive automation only fired while editing the location radius.
 - Done: identified this as iOS geofence trigger behavior rather than a webhook failure because manual Shortcut runs reached `/api/work-log`.
 - Decision: recommend testing by leaving the geofence fully and re-entering, using a wider radius or separate NFC backup if iOS remains unreliable.
+
+## 2026-06-30
+
+- Request: fix buggy time tracking totals and raw event display.
+- Done: changed work summaries to use the `Asia/Shanghai` time zone by default, pair work sessions by location, include open sessions in totals and ignore duplicated or explicitly ignored events.
+- Done: normalized iPhone Shortcut payload keys and values so accidental trailing spaces no longer make `source` or `device` show as `unknown`.
+- Done: changed the Time page to show paired sessions first, keep raw webhook events in a collapsible debug section and added Ignore/Restore actions for bad events.
+- Verification: unit tests and syntax checks passed. Local smoke test reproduced the 07:32 arrive, 12:08 leave and stray arrive case; after ignoring the stray arrive, Today/Week/Month all showed 4 h 36 min.

@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readStore, updateStore } from "./storage.js";
-import { markWorkEvent, normalizeWorkEvent, summarizeWork } from "./work-log.js";
+import { markWorkEvent, normalizeWorkEvent, setWorkEventIgnored, summarizeWork } from "./work-log.js";
 import { dueReminderEvents, formatReminderMessage, normalizeCalendarEvent, upcomingEvents } from "./calendar.js";
 import { sendServerChan } from "./serverchan.js";
 import {
@@ -290,6 +290,17 @@ const server = createServer(async (req, res) => {
         markWorkEvent(store, normalizeWorkEvent({ ...body, source: body.source || "manual_admin" }))
       );
       sendJson(res, 201, { event });
+      return;
+    }
+
+    const workEventPatchMatch = url.pathname.match(/^\/api\/work-events\/([^/]+)$/);
+    if (workEventPatchMatch && req.method === "PATCH") {
+      requireSession(req);
+      requireToken(req, adminToken);
+      const body = await readJsonBody(req);
+      const eventId = workEventPatchMatch[1];
+      const event = await updateStore((store) => setWorkEventIgnored(store, eventId, Boolean(body.ignored)));
+      sendJson(res, 200, { event });
       return;
     }
 

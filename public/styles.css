@@ -85,6 +85,11 @@ button.secondary {
   background: #59636b;
 }
 
+button.compact {
+  min-height: 32px;
+  padding: 0 10px;
+}
+
 .app-shell {
   display: grid;
   min-height: 100vh;
@@ -367,6 +372,39 @@ h2 {
 .event-row small {
   color: var(--warn);
   font-weight: 700;
+}
+
+.session-row.open {
+  border-color: #9ccbbb;
+  background: #f3fbf8;
+}
+
+.session-row.missing_leave,
+.session-row.missing_arrive,
+.session-row.invalid_order {
+  border-color: #ddb19c;
+  background: #fff8f4;
+}
+
+.raw-events {
+  margin-top: 14px;
+}
+
+.raw-events summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.raw-event.ignored {
+  opacity: 0.62;
+}
+
+.row-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .table-wrap {

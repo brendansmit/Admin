@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
 
 const duplicateWindowMs = 15 * 60 * 1000;
+const shortSessionMs = 2 * 60 * 1000;
+const defaultTimeZone = process.env.ADMIN_TIME_ZONE || "Asia/Shanghai";
+
+function cleanInput(input) {
+  return Object.fromEntries(
+    Object.entries(input || {}).map(([key, value]) => [String(key).trim(), typeof value === "string" ? value.trim() : value])
+  );
+}
 
 function parseDate(value, fallback = new Date()) {
   if (!value) {
@@ -16,7 +24,8 @@ function parseDate(value, fallback = new Date()) {
 }
 
 function normalizeWorkEvent(input, receivedAt = new Date()) {
-  const eventType = String(input.event || input.event_type || "").trim().toLowerCase();
+  const cleaned = cleanInput(input);
+  const eventType = String(cleaned.event || cleaned.event_type || "").trim().toLowerCase();
 
   if (!["arrive", "leave"].includes(eventType)) {
     const error = new Error("event must be arrive or leave");
@@ -27,14 +36,15 @@ function normalizeWorkEvent(input, receivedAt = new Date()) {
   return {
     id: randomUUID(),
     event_type: eventType,
-    location: String(input.location || "work").trim() || "work",
-    occurred_at: parseDate(input.occurred_at, receivedAt).toISOString(),
+    location: String(cleaned.location || "work").trim() || "work",
+    occurred_at: parseDate(cleaned.occurred_at, receivedAt).toISOString(),
     received_at: receivedAt.toISOString(),
-    source: String(input.source || "unknown").trim() || "unknown",
-    device: input.device ? String(input.device).trim() : "",
-    lat: Number.isFinite(Number(input.lat)) ? Number(input.lat) : null,
-    lon: Number.isFinite(Number(input.lon)) ? Number(input.lon) : null,
+    source: String(cleaned.source || "unknown").trim() || "unknown",
+    device: cleaned.device ? String(cleaned.device).trim() : "",
+    lat: Number.isFinite(Number(cleaned.lat)) ? Number(cleaned.lat) : null,
+    lon: Number.isFinite(Number(cleaned.lon)) ? Number(cleaned.lon) : null,
     duplicate: false,
+    ignored: false,
     warning: "",
     raw_json: input
   };
@@ -72,15 +82,21 @@ function markWorkEvent(store, event) {
 function pairSessions(events) {
   const sessions = [];
   const sorted = [...events]
-    .filter((event) => !event.duplicate)
+    .filter((event) => !event.duplicate && !event.ignored)
     .sort((a, b) => new Date(a.occurred_at) - new Date(b.occurred_at));
+  const openByLocation = new Map();
 
-  let openArrive = null;
+  function pushSession(session) {
+    sessions.push(session);
+  }
 
   for (const event of sorted) {
+    const location = event.location || "work";
+    const openArrive = openByLocation.get(location) || null;
+
     if (event.event_type === "arrive") {
       if (openArrive) {
-        sessions.push({
+        pushSession({
           id: `${openArrive.id}:open`,
           arrive_event_id: openArrive.id,
           leave_event_id: null,
@@ -91,16 +107,16 @@ function pairSessions(events) {
           status: "missing_leave"
         });
       }
-      openArrive = event;
+      openByLocation.set(location, event);
       continue;
     }
 
     if (!openArrive) {
-      sessions.push({
+      pushSession({
         id: `${event.id}:orphan`,
         arrive_event_id: null,
         leave_event_id: event.id,
-        location: event.location,
+        location,
         start: null,
         end: event.occurred_at,
         duration_minutes: 0,
@@ -110,7 +126,7 @@ function pairSessions(events) {
     }
 
     const durationMs = new Date(event.occurred_at) - new Date(openArrive.occurred_at);
-    sessions.push({
+    pushSession({
       id: `${openArrive.id}:${event.id}`,
       arrive_event_id: openArrive.id,
       leave_event_id: event.id,
@@ -118,13 +134,14 @@ function pairSessions(events) {
       start: openArrive.occurred_at,
       end: event.occurred_at,
       duration_minutes: Math.max(0, Math.round(durationMs / 60000)),
-      status: durationMs >= 0 ? "complete" : "invalid_order"
+      status: durationMs >= 0 ? "complete" : "invalid_order",
+      warning: durationMs >= 0 && durationMs < shortSessionMs ? "Arrive and leave are less than 2 minutes apart" : ""
     });
-    openArrive = null;
+    openByLocation.delete(location);
   }
 
-  if (openArrive) {
-    sessions.push({
+  for (const openArrive of openByLocation.values()) {
+    pushSession({
       id: `${openArrive.id}:open`,
       arrive_event_id: openArrive.id,
       leave_event_id: null,
@@ -136,40 +153,90 @@ function pairSessions(events) {
     });
   }
 
-  return sessions;
+  return sessions.sort((a, b) => new Date(a.start || a.end) - new Date(b.start || b.end));
 }
 
-function dateKey(isoDate) {
-  return isoDate ? isoDate.slice(0, 10) : "";
+function localParts(date, timeZone = defaultTimeZone) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  return Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
 }
 
-function summarizeWork(events, now = new Date()) {
-  const sessions = pairSessions(events);
-  const today = now.toISOString().slice(0, 10);
-  const day = now.getUTCDay();
+function localDateKey(value, timeZone = defaultTimeZone) {
+  if (!value) {
+    return "";
+  }
+  const parts = localParts(new Date(value), timeZone);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function localMonthKey(value, timeZone = defaultTimeZone) {
+  return localDateKey(value, timeZone).slice(0, 7);
+}
+
+function localWeekStartKey(now, timeZone = defaultTimeZone) {
+  const parts = localParts(now, timeZone);
+  const localUtcDate = new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)));
+  const day = localUtcDate.getUTCDay();
   const daysSinceMonday = day === 0 ? 6 : day - 1;
-  const weekStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysSinceMonday));
+  localUtcDate.setUTCDate(localUtcDate.getUTCDate() - daysSinceMonday);
+  return localUtcDate.toISOString().slice(0, 10);
+}
 
-  const completeSessions = sessions.filter((session) => session.status === "complete");
-  const todayMinutes = completeSessions
-    .filter((session) => dateKey(session.start) === today)
-    .reduce((total, session) => total + session.duration_minutes, 0);
-  const weekMinutes = completeSessions
-    .filter((session) => new Date(session.start) >= weekStart)
-    .reduce((total, session) => total + session.duration_minutes, 0);
-  const monthMinutes = completeSessions
-    .filter((session) => session.start?.slice(0, 7) === today.slice(0, 7))
-    .reduce((total, session) => total + session.duration_minutes, 0);
+function effectiveSessionMinutes(session, now) {
+  if (session.status === "complete") {
+    return session.duration_minutes;
+  }
+  if (session.status !== "open" || !session.start) {
+    return 0;
+  }
+  const durationMs = now - new Date(session.start);
+  return Math.max(0, Math.round(durationMs / 60000));
+}
+
+function summarizeWork(events, now = new Date(), timeZone = defaultTimeZone) {
+  const sessions = pairSessions(events);
+  const today = localDateKey(now, timeZone);
+  const weekStart = localWeekStartKey(now, timeZone);
+  const month = today.slice(0, 7);
+  const billableSessions = sessions.filter((session) => ["complete", "open"].includes(session.status));
+  const todayMinutes = billableSessions
+    .filter((session) => localDateKey(session.start, timeZone) === today)
+    .reduce((total, session) => total + effectiveSessionMinutes(session, now), 0);
+  const weekMinutes = billableSessions
+    .filter((session) => localDateKey(session.start, timeZone) >= weekStart)
+    .reduce((total, session) => total + effectiveSessionMinutes(session, now), 0);
+  const monthMinutes = billableSessions
+    .filter((session) => localMonthKey(session.start, timeZone) === month)
+    .reduce((total, session) => total + effectiveSessionMinutes(session, now), 0);
   const openSession = sessions.findLast((session) => session.status === "open") || null;
+  const warningSessions = sessions.filter((session) => session.status !== "complete" || session.warning);
 
   return {
     todayMinutes,
     weekMinutes,
     monthMinutes,
     openSession,
+    warningSessions,
+    timeZone,
     sessions: sessions.slice(-20).reverse(),
     events: [...events].slice(-30).reverse()
   };
 }
 
-export { markWorkEvent, normalizeWorkEvent, pairSessions, summarizeWork };
+function setWorkEventIgnored(store, eventId, ignored) {
+  const event = store.workEvents.find((candidate) => candidate.id === eventId);
+  if (!event) {
+    const error = new Error("Work event not found");
+    error.statusCode = 404;
+    throw error;
+  }
+  event.ignored = Boolean(ignored);
+  return event;
+}
+
+export { markWorkEvent, normalizeWorkEvent, pairSessions, setWorkEventIgnored, summarizeWork };
