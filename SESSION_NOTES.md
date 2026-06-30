@@ -84,3 +84,8 @@
 
 - Request: advise what NFC tag to buy, with possible access-card cloning as a second use.
 - Decision: for supplies, buy cheap NTAG213/215/216 stickers for iPhone Shortcuts and separate test cards/tools for any authorized office/elevator access-card work. Access cards may be MIFARE Classic, DESFire or 125 kHz RFID, so they should not be treated as the same purchase as Shortcut tags.
+
+## 2026-06-30
+
+- Request: narrow NFC supply advice to items easy to find on Taobao in China.
+- Decision: recommend searching Taobao for NTAG215 iPhone Shortcut stickers only for time tracking. For card identification without Android, use a Proxmark3 Easy or a local access-card shop scan before buying any blanks.
