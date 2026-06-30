@@ -52,3 +52,9 @@
 - Request: change the admin dashboard password.
 - Done: updated the live PM2 `ADMIN_PASSWORD`, restarted `admin-platform` and updated the local temp secrets note at `/private/tmp/inkheron-admin-live-secrets.txt`.
 - Verification: old password now returns `401`, new password returns `200`, `/api/health` is OK and authenticated `/api/dashboard` works.
+
+## 2026-06-30
+
+- Request: troubleshoot why the iPhone Shortcuts arrive automation only fired while editing the location radius.
+- Done: identified this as iOS geofence trigger behavior rather than a webhook failure because manual Shortcut runs reached `/api/work-log`.
+- Decision: recommend testing by leaving the geofence fully and re-entering, using a wider radius or separate NFC backup if iOS remains unreliable.
