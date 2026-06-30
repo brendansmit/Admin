@@ -79,3 +79,8 @@
 - Request: rethink the Shortcut/time-tracking design because geofence leave may fire during the day and Shortcuts still may not run reliably.
 - Decision: leaving the radius should be treated as a signal, not as final day completion. A better model is pending leave with a grace window, NFC/manual confirmation as the reliable path and geofence/Wi-Fi as backup hints.
 - Decision: Apple supports Arrive, Leave, Wi-Fi and NFC automations running automatically, but location triggers remain unreliable in practice because iOS decides when to deliver them.
+
+## 2026-06-30
+
+- Request: advise what NFC tag to buy, with possible access-card cloning as a second use.
+- Decision: for supplies, buy cheap NTAG213/215/216 stickers for iPhone Shortcuts and separate test cards/tools for any authorized office/elevator access-card work. Access cards may be MIFARE Classic, DESFire or 125 kHz RFID, so they should not be treated as the same purchase as Shortcut tags.
