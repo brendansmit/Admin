@@ -66,3 +66,10 @@
 - Done: normalized iPhone Shortcut payload keys and values so accidental trailing spaces no longer make `source` or `device` show as `unknown`.
 - Done: changed the Time page to show paired sessions first, keep raw webhook events in a collapsible debug section and added Ignore/Restore actions for bad events.
 - Verification: unit tests and syntax checks passed. Local smoke test reproduced the 07:32 arrive, 12:08 leave and stray arrive case; after ignoring the stray arrive, Today/Week/Month all showed 4 h 36 min.
+
+## 2026-06-30
+
+- Request: deploy the time tracking fix and clean the live bad timing data.
+- Done: pushed the fix to GitHub `main` and `codex/admin-dashboard`, rsynced it to `/opt/admin-platform` and restarted PM2 `admin-platform`.
+- Done: marked the live stray `2026-06-30T04:03:05.048Z` arrive event ignored, leaving the real `07:32` to `12:03` session intact. Backfilled old arrive events so `source` and `device` display as `iphone_shortcuts` and `Brendan iPhone`.
+- Verification: live dashboard API reports `todayMinutes: 271`, `weekMinutes: 276`, `monthMinutes: 276`, no open session and no warning sessions.
