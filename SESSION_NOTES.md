@@ -73,3 +73,9 @@
 - Done: pushed the fix to GitHub `main` and `codex/admin-dashboard`, rsynced it to `/opt/admin-platform` and restarted PM2 `admin-platform`.
 - Done: marked the live stray `2026-06-30T04:03:05.048Z` arrive event ignored, leaving the real `07:32` to `12:03` session intact. Backfilled old arrive events so `source` and `device` display as `iphone_shortcuts` and `Brendan iPhone`.
 - Verification: live dashboard API reports `todayMinutes: 271`, `weekMinutes: 276`, `monthMinutes: 276`, no open session and no warning sessions.
+
+## 2026-06-30
+
+- Request: rethink the Shortcut/time-tracking design because geofence leave may fire during the day and Shortcuts still may not run reliably.
+- Decision: leaving the radius should be treated as a signal, not as final day completion. A better model is pending leave with a grace window, NFC/manual confirmation as the reliable path and geofence/Wi-Fi as backup hints.
+- Decision: Apple supports Arrive, Leave, Wi-Fi and NFC automations running automatically, but location triggers remain unreliable in practice because iOS decides when to deliver them.
