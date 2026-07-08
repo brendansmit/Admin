@@ -1,5 +1,12 @@
 # Session Notes
 
+## 2026-07-08
+
+- Request: create `serve.inkheron.app` as a separate locked-down server control panel for DigitalOcean app operations.
+- Done: added a standalone `serve` Node app with password login, signed HttpOnly sessions, optional Cloudflare Access email allowlist, strict security headers, CSRF checks for restart/deploy/logout, typed host confirmation for restart/deploy, audit logging and allowlisted actions only.
+- Done: exposed only app status, logs, restart and deploy controls for InkPad, Admin, EAP, AP Lang, Speed Dating and Grammar Arcade. No terminal opener or custom command runner was included.
+- Verification: Node 20 tests passed for serve security helpers and existing admin tests. Local browser smoke test confirmed login, app tabs, health status, mobile layout without horizontal overflow and no console errors.
+
 ## 2026-06-29
 
 - Request: create the first version of `admin.inkheron.app` for work time tracking and ServerChan birthday/event reminders.

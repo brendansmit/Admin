@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>InkHeron Serve</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">serve.inkheron.app</p>
+          <h1>Server control</h1>
+        </div>
+        <div class="top-actions">
+          <span class="status-pill" id="sessionStatus">Checking</span>
+          <button type="button" class="secondary" id="logoutButton">Log out</button>
+        </div>
+      </header>
+
+      <section class="toolbar" aria-label="App selector">
+        <div class="tabs" id="appTabs"></div>
+        <button type="button" id="refreshButton">Refresh</button>
+      </section>
+
+      <section class="status-panel">
+        <span class="status-dot" id="statusDot"></span>
+        <div>
+          <strong id="statusTitle">Select an app</strong>
+          <span id="statusDetail">Status will appear here.</span>
+        </div>
+      </section>
+
+      <section class="actions" aria-label="Server actions">
+        <button type="button" class="action-button" id="deployButton">
+          <span>Deploy</span>
+          <small>Pull latest code and restart</small>
+        </button>
+        <button type="button" class="action-button warn" id="restartButton">
+          <span>Restart</span>
+          <small>Restart without deploying</small>
+        </button>
+        <button type="button" class="action-button neutral" id="logsButton">
+          <span>Logs</span>
+          <small>Show recent server output</small>
+        </button>
+      </section>
+
+      <section class="output-panel">
+        <div class="output-header">
+          <span>Output</span>
+          <button type="button" class="text-button" id="copyButton">Copy</button>
+        </div>
+        <pre id="output">Ready.</pre>
+      </section>
+    </main>
+
+    <dialog id="confirmDialog">
+      <form method="dialog" class="dialog-body">
+        <h2 id="confirmTitle">Confirm action</h2>
+        <p id="confirmCopy"></p>
+        <label for="confirmInput">Type the site host to continue</label>
+        <input id="confirmInput" autocomplete="off">
+        <div class="dialog-actions">
+          <button type="button" class="secondary" id="cancelConfirm">Cancel</button>
+          <button type="button" class="danger" id="acceptConfirm">Confirm</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
