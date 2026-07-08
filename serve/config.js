@@ -42,14 +42,14 @@ const apps = {
     label: "Admin",
     host: "admin.inkheron.app",
     healthUrl: "https://admin.inkheron.app/api/health",
-    repoPath: "/opt/inkheron-admin",
-    status: systemdStatus("inkheron-admin"),
-    logs: systemdLogs("inkheron-admin"),
-    restart: systemdRestart("inkheron-admin"),
+    repoPath: "/opt/admin-platform",
+    status: { command: "pm2", args: ["describe", "admin-platform"] },
+    logs: { command: "pm2", args: ["logs", "admin-platform", "--lines", "120", "--nostream", "--raw"] },
+    restart: { command: "pm2", args: ["restart", "admin-platform", "--update-env"] },
     deploy: [
-      { command: "git", args: ["-C", "/opt/inkheron-admin", "pull", "--ff-only"] },
-      { command: "npm", args: ["install", "--omit=dev"], cwd: "/opt/inkheron-admin" },
-      systemdRestart("inkheron-admin")
+      { command: "git", args: ["-C", "/opt/admin-platform", "pull", "--ff-only"] },
+      { command: "npm", args: ["install", "--omit=dev"], cwd: "/opt/admin-platform" },
+      { command: "pm2", args: ["restart", "admin-platform", "--update-env"] }
     ]
   },
   eap: {
