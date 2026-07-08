@@ -6,6 +6,8 @@
 - Done: added a standalone `serve` Node app with password login, signed HttpOnly sessions, optional Cloudflare Access email allowlist, strict security headers, CSRF checks for restart/deploy/logout, typed host confirmation for restart/deploy, audit logging and allowlisted actions only.
 - Done: exposed only app status, logs, restart and deploy controls for InkPad, Admin, EAP, AP Lang, Speed Dating and Grammar Arcade. No terminal opener or custom command runner was included.
 - Verification: Node 20 tests passed for serve security helpers and existing admin tests. Local browser smoke test confirmed login, app tabs, health status, mobile layout without horizontal overflow and no console errors.
+- Done: added a `Serve` button in the normal Admin top bar linking to `https://serve.inkheron.app`.
+- Verification: local Admin browser check confirmed the button text, target URL, `_blank` behavior and no horizontal overflow.
 
 ## 2026-06-29
 

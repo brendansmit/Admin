@@ -81,6 +81,21 @@ button:hover {
   background: var(--accent-strong);
 }
 
+.button-link {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  padding: 0 16px;
+  text-decoration: none;
+}
+
+.button-link:hover {
+  background: var(--accent-strong);
+}
+
 button.secondary {
   background: #59636b;
 }
