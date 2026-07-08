@@ -2,8 +2,10 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 const cookieName = "ih_serve_session";
 const ttlMs = 1000 * 60 * 60 * 12;
+const actionUnlockTtlMs = 1000 * 60 * 15;
 const sessions = new Map();
 const attempts = new Map();
+const actionSecretAttempts = new Map();
 
 function secret() {
   return process.env.SERVE_SESSION_SECRET || process.env.SESSION_SECRET || "dev-serve-session-secret";
@@ -11,6 +13,10 @@ function secret() {
 
 function password() {
   return process.env.SERVE_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || "dev-serve-password";
+}
+
+function actionSecret() {
+  return process.env.SERVE_ACTION_SECRET || "dev-serve-action-secret";
 }
 
 function sign(value) {
@@ -47,7 +53,7 @@ function createSession() {
   const id = randomBytes(32).toString("base64url");
   const csrf = randomBytes(32).toString("base64url");
   const expiresAt = Date.now() + ttlMs;
-  sessions.set(id, { csrf, expiresAt });
+  sessions.set(id, { csrf, expiresAt, actionUnlockedUntil: 0 });
   return { cookieValue: `${id}.${sign(id)}`, csrf, expiresAt };
 }
 
@@ -95,6 +101,31 @@ function validatePassword(candidate) {
   return safeEqual(String(candidate || ""), password());
 }
 
+function validateActionSecret(candidate) {
+  return safeEqual(String(candidate || ""), actionSecret());
+}
+
+function actionUnlocked(session) {
+  return Boolean(session?.actionUnlockedUntil && session.actionUnlockedUntil > Date.now());
+}
+
+function unlockActions(sessionId) {
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return null;
+  }
+  session.actionUnlockedUntil = Date.now() + actionUnlockTtlMs;
+  return session.actionUnlockedUntil;
+}
+
+function requireActionUnlock(session) {
+  if (!actionUnlocked(session)) {
+    const error = new Error("Action secret required");
+    error.statusCode = 423;
+    throw error;
+  }
+}
+
 function cookie(req, value, maxAge = Math.floor(ttlMs / 1000)) {
   const proto = req.headers["x-forwarded-proto"] || "";
   const secure = proto === "https" ? "; Secure" : "";
@@ -116,18 +147,26 @@ function clientIp(req) {
 }
 
 function rateLimitLogin(req) {
+  rateLimitMap(attempts, req, 8, "Too many login attempts");
+}
+
+function rateLimitActionSecret(req) {
+  rateLimitMap(actionSecretAttempts, req, 5, "Too many secret attempts");
+}
+
+function rateLimitMap(map, req, maxAttempts, message) {
   const ip = clientIp(req);
   const now = Date.now();
   const windowMs = 1000 * 60 * 10;
-  const current = attempts.get(ip) || { count: 0, resetAt: now + windowMs };
+  const current = map.get(ip) || { count: 0, resetAt: now + windowMs };
   if (current.resetAt <= now) {
-    attempts.set(ip, { count: 1, resetAt: now + windowMs });
+    map.set(ip, { count: 1, resetAt: now + windowMs });
     return;
   }
   current.count += 1;
-  attempts.set(ip, current);
-  if (current.count > 8) {
-    const error = new Error("Too many login attempts");
+  map.set(ip, current);
+  if (current.count > maxAttempts) {
+    const error = new Error(message);
     error.statusCode = 429;
     throw error;
   }
@@ -164,9 +203,14 @@ export {
   createSession,
   destroySession,
   requireAccessIdentity,
+  requireActionUnlock,
   requireCsrf,
   requireSession,
   sessionFromRequest,
+  actionUnlocked,
   validatePassword,
+  validateActionSecret,
+  unlockActions,
+  rateLimitActionSecret,
   rateLimitLogin
 };

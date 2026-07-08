@@ -5,15 +5,20 @@ import { fileURLToPath } from "node:url";
 import { audit } from "./audit.js";
 import { getApp, publicApps } from "./config.js";
 import {
+  actionUnlocked,
   clearLoginAttempts,
   cookie,
   createSession,
   destroySession,
+  rateLimitActionSecret,
   rateLimitLogin,
+  requireActionUnlock,
   requireAccessIdentity,
   requireCsrf,
   requireSession,
   sessionFromRequest,
+  unlockActions,
+  validateActionSecret,
   validatePassword
 } from "./auth.js";
 import { runSequence, runStep } from "./runner.js";
@@ -141,7 +146,12 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/session" && req.method === "GET") {
-      sendJson(res, 200, { authenticated: Boolean(session), csrfToken: session?.csrf || null });
+      sendJson(res, 200, {
+        authenticated: Boolean(session),
+        csrfToken: session?.csrf || null,
+        actionsUnlocked: actionUnlocked(session),
+        actionUnlockExpiresAt: session?.actionUnlockedUntil || null
+      });
       return;
     }
 
@@ -167,6 +177,22 @@ const server = createServer(async (req, res) => {
       requireCsrf(req, activeSession);
       destroySession(req);
       sendJson(res, 200, { ok: true }, { "set-cookie": cookie(req, "", 0) });
+      return;
+    }
+
+    if (url.pathname === "/api/action-unlock" && req.method === "POST") {
+      const activeSession = requireSession(req);
+      requireCsrf(req, activeSession);
+      rateLimitActionSecret(req);
+      const body = await readJsonBody(req);
+      if (!validateActionSecret(body.secret)) {
+        await audit(req, { action: "action_unlock", success: false });
+        sendJson(res, 401, { error: "invalid_secret" });
+        return;
+      }
+      const expiresAt = unlockActions(activeSession.id);
+      await audit(req, { action: "action_unlock", success: true });
+      sendJson(res, 200, { ok: true, actionsUnlocked: true, actionUnlockExpiresAt: expiresAt });
       return;
     }
 
@@ -197,6 +223,7 @@ const server = createServer(async (req, res) => {
     if (actionMatch && req.method === "POST") {
       const activeSession = requireSession(req);
       requireCsrf(req, activeSession);
+      requireActionUnlock(activeSession);
       const [, key, action] = actionMatch;
       const app = getApp(key);
       if (!app) {
