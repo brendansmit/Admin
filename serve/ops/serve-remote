@@ -15,15 +15,21 @@ set -euo pipefail
 
 deny() { echo "serve-remote: refused: $*" >&2; exit 42; }
 
+# "pm2 jlist" exits 0 whatever the app is doing, so checking its exit code
+# would call a dead app healthy. Parse the list instead: print the app's real
+# state and exit non-zero unless it is online. The name is interpolated from
+# the fixed table below, never from user input.
+pm2_online() {
+  cat <<EOF
+pm2 jlist | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const a=JSON.parse(s).find(p=>p.name==="$1");console.log(a?a.pm2_env.status:"not found");process.exit(a&&a.pm2_env.status==="online"?0:1);});'
+EOF
+}
+
 status_for() {
   case "$1" in
-    inkpad)         echo 'systemctl is-active inkheron-wrapper' ;;
-    eap-platform)   echo 'pm2 jlist' ;;
-    ap-lang)        echo 'pm2 jlist' ;;
-    speed-dating)   echo 'pm2 jlist' ;;
-    grammar-arcade) echo 'pm2 jlist' ;;
-    admin-platform) echo 'pm2 jlist' ;;
-    grade-importer) echo 'pm2 jlist' ;;
+    inkpad) echo 'systemctl is-active inkheron-wrapper' ;;
+    eap-platform|ap-lang|speed-dating|grammar-arcade|admin-platform|grade-importer)
+      pm2_online "$1" ;;
     *) return 1 ;;
   esac
 }

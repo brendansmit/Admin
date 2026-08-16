@@ -11,7 +11,7 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">serve.inkheron.app</p>
-          <h1>Server control</h1>
+          <h1>Launcher and server control</h1>
         </div>
         <div class="top-actions">
           <span class="status-pill" id="actionUnlockStatus">Actions locked</span>
@@ -21,40 +21,60 @@
         </div>
       </header>
 
-      <section class="toolbar" aria-label="App selector">
-        <div class="tabs" id="appTabs"></div>
-        <button type="button" id="refreshButton">Refresh</button>
-      </section>
-
-      <section class="status-panel">
-        <span class="status-dot" id="statusDot"></span>
-        <div>
-          <strong id="statusTitle">Select an app</strong>
-          <span id="statusDetail">Status will appear here.</span>
+      <section class="launcher" aria-label="Apps and sites">
+        <div class="launcher-head">
+          <h2>Everything running</h2>
+          <button type="button" class="secondary" id="refreshAllButton">Refresh all</button>
+        </div>
+        <div id="dropletGroups"></div>
+        <div class="group" id="localGroup" hidden>
+          <div class="group-head">
+            <h3>On the Mac only</h3>
+            <p class="muted">No server counterpart, so nothing to open or restart from here.</p>
+          </div>
+          <div class="app-grid" id="localGrid"></div>
         </div>
       </section>
 
-      <section class="actions" aria-label="Server actions">
-        <button type="button" class="action-button" id="deployButton">
-          <span>Deploy</span>
-          <small>Pull latest code and restart</small>
-        </button>
-        <button type="button" class="action-button warn" id="restartButton">
-          <span>Restart</span>
-          <small>Restart without deploying</small>
-        </button>
-        <button type="button" class="action-button neutral" id="logsButton">
-          <span>Logs</span>
-          <small>Show recent server output</small>
-        </button>
-      </section>
-
-      <section class="output-panel">
-        <div class="output-header">
-          <span>Output</span>
-          <button type="button" class="text-button" id="copyButton">Copy</button>
+      <section class="control" aria-label="Server actions">
+        <div class="control-head">
+          <div>
+            <p class="eyebrow">Managing</p>
+            <h2 id="controlTitle">Select an app above</h2>
+          </div>
+          <button type="button" id="refreshButton">Refresh status</button>
         </div>
-        <pre id="output">Ready.</pre>
+
+        <div class="status-panel">
+          <span class="status-dot" id="statusDot"></span>
+          <div>
+            <strong id="statusTitle">Nothing selected</strong>
+            <span id="statusDetail">Pick a card to see its status.</span>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="action-button" id="deployButton">
+            <span>Deploy</span>
+            <small id="deployNote">Pull latest code and restart</small>
+          </button>
+          <button type="button" class="action-button warn" id="restartButton">
+            <span>Restart</span>
+            <small id="restartNote">Restart without deploying</small>
+          </button>
+          <button type="button" class="action-button neutral" id="logsButton">
+            <span>Logs</span>
+            <small>Show recent server output</small>
+          </button>
+        </div>
+
+        <div class="output-panel">
+          <div class="output-header">
+            <span>Output</span>
+            <button type="button" class="text-button" id="copyButton">Copy</button>
+          </div>
+          <pre id="output">Ready.</pre>
+        </div>
       </section>
     </main>
 

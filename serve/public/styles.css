@@ -192,7 +192,6 @@ h2 {
   color: var(--accent-strong);
 }
 
-.toolbar,
 .status-panel,
 .actions,
 .output-panel {
@@ -201,24 +200,132 @@ h2 {
   background: var(--panel);
 }
 
-.toolbar {
-  padding: 12px;
+/* ── launcher grid ──────────────────────────────────────────────────── */
+
+.launcher,
+.control {
+  display: grid;
+  gap: 16px;
 }
 
-.tabs {
+.launcher-head,
+.control-head {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.group {
+  display: grid;
+  gap: 10px;
+}
+
+.group-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.group-head p {
+  margin: 2px 0 0;
+  font-size: 0.85rem;
+}
+
+.app-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.app-card {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 14px;
+  cursor: pointer;
+}
+
+.app-card:hover,
+.app-card:focus-visible {
+  border-color: #9ccbbb;
+  outline: none;
+}
+
+.app-card.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
-.tabs button {
-  background: #e8eee9;
-  color: var(--ink);
+.card-head h4 {
+  margin: 0;
+  font-size: 1rem;
 }
 
-.tabs button.active {
+.card-host {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  word-break: break-word;
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.card-open {
+  color: var(--accent-strong);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.card-manage,
+.card-flag {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* Mac-only tools. Visible so the estate is complete, greyed because there is
+   nothing here to open or restart. */
+.app-card.local {
+  background: #efede7;
+  color: var(--muted);
+  cursor: default;
+}
+
+.app-card.local:hover {
+  border-color: var(--line);
+}
+
+.srv-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #c4cbc6;
+}
+
+.srv-dot.online {
   background: var(--accent);
-  color: #fff;
+}
+
+.srv-dot.degraded {
+  background: #c98411;
+}
+
+.srv-dot.offline {
+  background: var(--danger);
 }
 
 .status-panel {
@@ -245,6 +352,11 @@ h2 {
 .status-dot.online {
   background: var(--accent);
   box-shadow: 0 0 0 4px #d8ebe5;
+}
+
+.status-dot.degraded {
+  background: #c98411;
+  box-shadow: 0 0 0 4px #f4e5c6;
 }
 
 .status-dot.offline {
@@ -283,6 +395,15 @@ h2 {
 
 .action-button.neutral {
   background: #59636b;
+}
+
+.action-button:disabled {
+  background: #b8bdb9;
+  cursor: not-allowed;
+}
+
+.action-button:disabled:hover {
+  background: #b8bdb9;
 }
 
 .output-panel {
@@ -340,13 +461,13 @@ dialog::backdrop {
     grid-template-columns: 1fr;
   }
 
-  .toolbar {
+  .launcher-head,
+  .control-head {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .tabs {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .app-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
 }

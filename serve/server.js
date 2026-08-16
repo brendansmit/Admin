@@ -1,9 +1,18 @@
 import { createServer } from "node:http";
+import { mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { audit } from "./audit.js";
-import { getApp, publicApps } from "./config.js";
+import {
+  apps,
+  droplet1Warm,
+  droplets,
+  getApp,
+  localOnlyTools,
+  publicApps,
+  sshMuxDir
+} from "./config.js";
 import {
   actionUnlocked,
   clearLoginAttempts,
@@ -32,6 +41,9 @@ const port = Number.parseInt(process.env.PORT || "3469", 10);
 // SERVE_BIND=0.0.0.0 and relies on ufw to allow port 3469 from the Docker
 // subnets only.
 const bindHost = process.env.SERVE_BIND || "127.0.0.1";
+
+// ssh refuses to create a control socket in a directory that does not exist.
+mkdirSync(sshMuxDir, { recursive: true, mode: 0o700 });
 
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -120,22 +132,42 @@ function appFromUrl(url) {
 }
 
 async function statusFor(app) {
-  let health = { online: false, detail: "health check failed" };
-  try {
-    const response = await fetch(app.healthUrl, { signal: AbortSignal.timeout(6000) });
-    health = { online: response.status < 400, detail: `HTTP ${response.status}` };
-  } catch (error) {
-    health = { online: false, detail: error.message };
+  // Two independent signals: does the public URL answer, and is the process
+  // running. A process that is up while its site does not answer is degraded,
+  // not online, and reporting it as online hides a real outage.
+  let unreachable = null;
+  if (app.healthUrl) {
+    try {
+      const response = await fetch(app.healthUrl, { signal: AbortSignal.timeout(10000) });
+      if (response.status >= 400) {
+        unreachable = `HTTP ${response.status}`;
+      }
+    } catch (error) {
+      unreachable = error.message;
+    }
   }
 
-  if (health.online) {
-    return health;
+  const processStatus = await runStep(app.status, 20000);
+  // Some checks cannot report failure through an exit code. "docker compose
+  // ps" is happy either way and just prints nothing when the container is
+  // down, so those steps declare requireOutput and an empty answer counts as
+  // down rather than healthy.
+  const processOk = processStatus.ok
+    && (!app.status.requireOutput || processStatus.output.trim().length > 0);
+
+  let detail;
+  if (!processOk) {
+    detail = unreachable || "process not active";
+  } else if (unreachable) {
+    detail = `process up, site unreachable (${unreachable})`;
+  } else {
+    detail = app.healthUrl ? "online" : "process active";
   }
 
-  const processStatus = await runStep(app.status, 15000);
   return {
-    online: processStatus.ok,
-    detail: processStatus.ok ? "process active" : health.detail,
+    online: processOk && !unreachable,
+    degraded: Boolean(processOk && unreachable),
+    detail,
     processOutput: processStatus.output
   };
 }
@@ -204,7 +236,7 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/api/apps" && req.method === "GET") {
       requireSession(req);
-      sendJson(res, 200, { apps: publicApps() });
+      sendJson(res, 200, { apps: publicApps(), droplets, localOnlyTools });
       return;
     }
 
@@ -213,6 +245,26 @@ const server = createServer(async (req, res) => {
       const { key, app } = appFromUrl(url);
       const status = await statusFor(app);
       sendJson(res, 200, { key, label: app.label, host: app.host, ...status });
+      return;
+    }
+
+    if (url.pathname === "/api/status-all" && req.method === "GET") {
+      requireSession(req);
+      // Warm the shared ssh connection first, then check everything at once.
+      // One request for the whole grid: the browser caps concurrent requests
+      // per host at around six, so a dot per request left the last few queued
+      // behind the slow ssh calls.
+      await runStep(droplet1Warm, 15000);
+      const entries = Object.entries(apps);
+      const results = await Promise.all(entries.map(async ([key, app]) => {
+        try {
+          const { online, degraded, detail } = await statusFor(app);
+          return [key, { online, degraded, detail }];
+        } catch (error) {
+          return [key, { online: false, degraded: false, detail: error.message }];
+        }
+      }));
+      sendJson(res, 200, Object.fromEntries(results));
       return;
     }
 
@@ -242,9 +294,24 @@ const server = createServer(async (req, res) => {
         return;
       }
 
-      const result = action === "restart"
-        ? await runSequence([app.restart])
-        : await runSequence(app.deploy);
+      // Not every app supports both actions. mosaic has nothing to pull, the
+      // rsync apps have no git remote on their droplet, and this panel cannot
+      // restart itself. Refuse those before spawning anything, so a missing
+      // step never reaches the runner as undefined.
+      const steps = action === "restart"
+        ? (app.restart ? [app.restart] : null)
+        : (Array.isArray(app.deploy) ? app.deploy : null);
+      if (!steps) {
+        const note = action === "restart" ? app.restartNote : app.deployNote;
+        await audit(req, { action, app: key, success: false, detail: "unsupported" });
+        sendJson(res, 409, {
+          error: `${action}_unavailable`,
+          message: note || `${action} is not configured for this app.`
+        });
+        return;
+      }
+
+      const result = await runSequence(steps);
       await audit(req, { action, app: key, success: result.ok });
       sendJson(res, 200, { success: result.ok, output: result.output });
       return;
