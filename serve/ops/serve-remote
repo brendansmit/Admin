@@ -1,0 +1,95 @@
+#!/bin/bash
+#
+# Forced command for the serve panel's key (droplet 2 -> droplet 1).
+#
+# This key gets no shell. ssh hands us the requested command in
+# SSH_ORIGINAL_COMMAND and we accept only "<verb> <app>" pairs from the
+# tables below. Anything else is refused, so a compromised serve panel
+# cannot run arbitrary commands as root on this droplet.
+#
+# Installed by authorized_keys as:
+#   command="/usr/local/bin/serve-remote",no-agent-forwarding,
+#   no-port-forwarding,no-pty,no-user-rc,no-X11-forwarding ssh-ed25519 ...
+
+set -euo pipefail
+
+deny() { echo "serve-remote: refused: $*" >&2; exit 42; }
+
+status_for() {
+  case "$1" in
+    inkpad)         echo 'systemctl is-active inkheron-wrapper' ;;
+    eap-platform)   echo 'pm2 jlist' ;;
+    ap-lang)        echo 'pm2 jlist' ;;
+    speed-dating)   echo 'pm2 jlist' ;;
+    grammar-arcade) echo 'pm2 jlist' ;;
+    admin-platform) echo 'pm2 jlist' ;;
+    grade-importer) echo 'pm2 jlist' ;;
+    *) return 1 ;;
+  esac
+}
+
+logs_for() {
+  case "$1" in
+    inkpad)         echo 'journalctl -u inkheron-wrapper -n 80 --no-pager' ;;
+    eap-platform)   echo 'pm2 logs eap-platform --lines 80 --nostream --raw' ;;
+    ap-lang)        echo 'pm2 logs ap-lang --lines 80 --nostream --raw' ;;
+    speed-dating)   echo 'pm2 logs speed-dating --lines 80 --nostream --raw' ;;
+    grammar-arcade) echo 'pm2 logs grammar-arcade --lines 80 --nostream --raw' ;;
+    admin-platform) echo 'pm2 logs admin-platform --lines 80 --nostream --raw' ;;
+    grade-importer) echo 'pm2 logs grade-importer --lines 80 --nostream --raw' ;;
+    *) return 1 ;;
+  esac
+}
+
+restart_for() {
+  case "$1" in
+    inkpad)         echo 'systemctl restart inkheron-wrapper' ;;
+    eap-platform)   echo 'cd /opt/eap-platform && set -a && . /etc/eap-platform.env && set +a && pm2 restart eap-platform --update-env' ;;
+    ap-lang)        echo 'pm2 restart ap-lang' ;;
+    speed-dating)   echo 'pm2 restart speed-dating' ;;
+    grammar-arcade) echo 'cd /var/www/grammar-arcade && pm2 reload ecosystem.config.cjs --update-env' ;;
+    admin-platform) echo 'pm2 restart admin-platform --update-env' ;;
+    grade-importer) echo 'pm2 restart grade-importer' ;;
+    *) return 1 ;;
+  esac
+}
+
+# Only the apps that actually have a git remote on this droplet. The others
+# ship by rsync from the Mac, so there is nothing here to pull and saying so
+# is better than running a command that cannot work.
+deploy_for() {
+  case "$1" in
+    ap-lang)        echo 'cd /var/www/ap-lang-dashboard && git pull --ff-only && npm install --omit=dev && pm2 restart ap-lang' ;;
+    speed-dating)   echo 'cd /var/www/speed-dating && git pull --ff-only && pm2 restart speed-dating' ;;
+    grammar-arcade) echo 'cd /var/www/grammar-arcade && git pull --ff-only && npm install --omit=dev && pm2 reload ecosystem.config.cjs --update-env' ;;
+    *) return 1 ;;
+  esac
+}
+
+req="${SSH_ORIGINAL_COMMAND:-}"
+[ -n "$req" ] || deny "no command"
+
+# Exactly two whitespace-separated words, both plain identifiers. This is what
+# stops "restart ap-lang; rm -rf /" from ever reaching a shell.
+read -r verb app extra <<< "$req"
+[ -z "${extra:-}" ] || deny "too many arguments"
+[[ "$verb" =~ ^[a-z]+$ ]] || deny "bad verb"
+
+# "apps" is the one verb that takes no argument.
+if [ "$verb" = "apps" ]; then
+  [ -z "${app:-}" ] || deny "apps takes no argument"
+  printf '%s\n' inkpad eap-platform ap-lang speed-dating grammar-arcade admin-platform grade-importer
+  exit 0
+fi
+
+[[ "$app" =~ ^[a-z0-9-]+$ ]] || deny "bad app name"
+
+case "$verb" in
+  status)  cmd=$(status_for  "$app") || deny "unknown app '$app'" ;;
+  logs)    cmd=$(logs_for    "$app") || deny "unknown app '$app'" ;;
+  restart) cmd=$(restart_for "$app") || deny "unknown app '$app'" ;;
+  deploy)  cmd=$(deploy_for  "$app") || deny "deploy is not available for '$app' (no git remote on this droplet; it ships by rsync from the Mac)" ;;
+  *)       deny "unknown verb '$verb'" ;;
+esac
+
+exec bash -lc "$cmd"

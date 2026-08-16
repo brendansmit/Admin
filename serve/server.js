@@ -26,6 +26,12 @@ import { runSequence, runStep } from "./runner.js";
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const publicDir = join(__dirname, "public");
 const port = Number.parseInt(process.env.PORT || "3469", 10);
+// Loopback by default, so nothing changes for a local run. On droplet 2 the
+// TLS terminator is Caddy inside Docker, which reaches the host across a
+// bridge network and so cannot see 127.0.0.1. That deployment sets
+// SERVE_BIND=0.0.0.0 and relies on ufw to allow port 3469 from the Docker
+// subnets only.
+const bindHost = process.env.SERVE_BIND || "127.0.0.1";
 
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -265,8 +271,8 @@ const server = createServer(async (req, res) => {
 });
 
 if (process.env.NODE_ENV !== "test") {
-  server.listen(port, "127.0.0.1", () => {
-    console.log(`InkHeron Serve listening on http://127.0.0.1:${port}`);
+  server.listen(port, bindHost, () => {
+    console.log(`InkHeron Serve listening on http://${bindHost}:${port}`);
   });
 }
 
