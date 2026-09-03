@@ -99,3 +99,38 @@
 
 - Request: narrow NFC supply advice to items easy to find on Taobao in China.
 - Decision: recommend searching Taobao for NTAG215 iPhone Shortcut stickers only for time tracking. For card identification without Android, use a Proxmark3 Easy or a local access-card shop scan before buying any blanks.
+
+## 2026-09-04 One unified login
+
+**Asked:** kill the double login. There was a browser basic-auth popup asking for
+a username *and* an Admin login page. Make it one login, seed it with `ChangeMe1`,
+and let me change the password myself once I am in.
+
+**Done:**
+- Reconciled the repo with the server first (commit `d029f2e`). The deployed
+  server had run ahead of git, so deploying from the repo would have silently
+  reverted working features.
+- `src/auth.js`: the password moved out of `ecosystem.config.cjs` into the store
+  as a scrypt hash, seeded with `ChangeMe1` on first boot. Added `setPassword`,
+  `passwordIsInitial`, `initAuth`. Sessions are now persisted to the store and
+  restored on boot, so a pm2 restart no longer logs you out.
+- `src/server.js`: `POST /api/password` (needs a session plus the current
+  password, minimum 8 characters, reissues the cookie). `/api/session` now also
+  reports `passwordIsInitial`.
+- `public/`: a Password panel in Settings, and a topbar nudge that only shows
+  while still on the starter password.
+- Removed `ADMIN_PASSWORD` from `/opt/admin-platform/ecosystem.config.cjs`.
+- nginx `admin.inkheron.app`: dropped `auth_basic` and `auth_basic_user_file`
+  entirely, deleted `/etc/nginx/.htpasswd-admin`. Grade Importer's `/grades` and
+  its `/api/...` routes now sit behind `auth_request /auth-gate`, which proxies
+  to the Admin platform's `/api/auth-check`. A logged-out page request 302s to
+  the login page. `/api/sync` stays open to nginx because InkPad authenticates
+  with its own Bearer token. Backup of the old config at
+  `/root/admin.inkheron.app.bak`.
+
+**Verified live:** logged out `/` serves the login page with no
+`WWW-Authenticate` header, `/grades` 302s to it, `/api/roster` 401s, `ChangeMe1`
+logs in, and `/grades` then loads the gradebook. `npm test` 12/12.
+
+**Note:** delete the `auth` block from `data/store.json` to reset the password
+back to `ChangeMe1`.
