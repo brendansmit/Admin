@@ -29,6 +29,7 @@ const publicDir = join(rootDir, "public");
 const port = Number.parseInt(process.env.PORT || "3468", 10);
 const webhookToken = process.env.WEBHOOK_TOKEN || "dev-webhook-token";
 const adminToken = process.env.ADMIN_TOKEN || "dev-admin-token";
+let lastImportIds = [];
 const reminderCronToken = process.env.REMINDER_CRON_TOKEN || "dev-cron-token";
 
 const contentTypes = {
@@ -200,6 +201,16 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/auth-check" && req.method === "GET") {
+      if (sessionFromRequest(req)) {
+        res.writeHead(200);
+      } else {
+        res.writeHead(401);
+      }
+      res.end();
+      return;
+    }
+
     if (url.pathname === "/api/login" && req.method === "POST") {
       const body = await readJsonBody(req);
       if (!validatePassword(body.password)) {
@@ -253,11 +264,23 @@ const server = createServer(async (req, res) => {
       const query = String(url.searchParams.get("q") || "").trim().toLowerCase();
       const relationship = String(url.searchParams.get("relationship") || "").trim();
       const tag = String(url.searchParams.get("tag") || "").trim();
+      const sort = String(url.searchParams.get("sort") || "name").trim();
       const birthdays = store.birthdays
         .filter((birthday) => !query || birthday.name.toLowerCase().includes(query))
         .filter((birthday) => !relationship || birthday.relationship === relationship)
         .filter((birthday) => !tag || birthday.tags.includes(tag))
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .sort((a, b) => {
+          if (sort === "date") {
+            // Compare MM-DD portion only so sort is calendar-order regardless of year
+            return (a.birthdate || "").slice(5).localeCompare((b.birthdate || "").slice(5));
+          }
+          if (sort === "tag") {
+            const aTag = (a.tags || [])[0] || "￿";
+            const bTag = (b.tags || [])[0] || "￿";
+            return aTag.localeCompare(bTag) || a.name.localeCompare(b.name);
+          }
+          return a.name.localeCompare(b.name);
+        });
       const tags = [...new Set(store.birthdays.flatMap((birthday) => birthday.tags))].sort();
       sendJson(res, 200, {
         birthdays,
@@ -284,7 +307,6 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/api/work-events" && req.method === "POST") {
       requireSession(req);
-      requireToken(req, adminToken);
       const body = await readJsonBody(req);
       const event = await updateStore((store) =>
         markWorkEvent(store, normalizeWorkEvent({ ...body, source: body.source || "manual_admin" }))
@@ -296,7 +318,6 @@ const server = createServer(async (req, res) => {
     const workEventPatchMatch = url.pathname.match(/^\/api\/work-events\/([^/]+)$/);
     if (workEventPatchMatch && req.method === "PATCH") {
       requireSession(req);
-      requireToken(req, adminToken);
       const body = await readJsonBody(req);
       const eventId = workEventPatchMatch[1];
       const event = await updateStore((store) => setWorkEventIgnored(store, eventId, Boolean(body.ignored)));
@@ -306,7 +327,6 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/api/calendar-events" && req.method === "POST") {
       requireSession(req);
-      requireToken(req, adminToken);
       const body = await readJsonBody(req);
       const event = normalizeCalendarEvent(body);
       await updateStore((store) => {
@@ -318,7 +338,6 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/api/birthdays" && req.method === "POST") {
       requireSession(req);
-      requireToken(req, adminToken);
       const body = await readJsonBody(req);
       const birthday = normalizeBirthday(body);
       await updateStore((store) => {
@@ -328,53 +347,65 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/birthdays/preview" && req.method === "POST") {
+      requireSession(req);
+      const body = await readJsonBody(req);
+      const parsed = parseBirthdayImport(body);
+      sendJson(res, 200, { birthdays: parsed.birthdays, skipped: parsed.skipped });
+      return;
+    }
+
     if (url.pathname === "/api/birthdays/import" && req.method === "POST") {
       requireSession(req);
-      requireToken(req, adminToken);
       const body = await readJsonBody(req);
       const parsed = parseBirthdayImport(body);
       const result = await updateStore((store) => {
-        const seen = new Set(store.birthdays.map((birthday) => `${birthday.name.toLowerCase()}:${birthday.birthdate}`));
+        const seen = new Set(store.birthdays.map((b) => b.name.toLowerCase() + ":" + b.birthdate));
         const imported = [];
         const skipped = [...parsed.skipped];
-
         for (const birthday of parsed.birthdays) {
-          const key = `${birthday.name.toLowerCase()}:${birthday.birthdate}`;
-          if (seen.has(key)) {
-            skipped.push({ row: null, reason: `Duplicate skipped: ${birthday.name}` });
-            continue;
-          }
+          const key = birthday.name.toLowerCase() + ":" + birthday.birthdate;
+          if (seen.has(key)) { skipped.push({ row: null, reason: "Duplicate skipped: " + birthday.name }); continue; }
           seen.add(key);
           store.birthdays.push(birthday);
           imported.push(birthday);
         }
-
         return { imported, skipped };
       });
+      lastImportIds = result.imported.map((b) => b.id);
       sendJson(res, 201, result);
       return;
     }
 
+    if (url.pathname === "/api/birthdays/undo" && req.method === "POST") {
+      requireSession(req);
+      if (!lastImportIds.length) { sendJson(res, 400, { error: "Nothing to undo" }); return; }
+      const ids = new Set(lastImportIds);
+      await updateStore((store) => { store.birthdays = store.birthdays.filter((b) => !ids.has(b.id)); });
+      const count = lastImportIds.length;
+      lastImportIds = [];
+      sendJson(res, 200, { removed: count });
+      return;
+    }
+
     const birthdayPatchMatch = url.pathname.match(/^\/api\/birthdays\/([^/]+)$/);
+    if (birthdayPatchMatch && req.method === "DELETE") {
+      requireSession(req);
+      const birthdayId = birthdayPatchMatch[1];
+      await updateStore((store) => { store.birthdays = store.birthdays.filter((b) => b.id !== birthdayId); });
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
     if (birthdayPatchMatch && req.method === "PATCH") {
       requireSession(req);
-      requireToken(req, adminToken);
       const body = await readJsonBody(req);
       const birthdayId = birthdayPatchMatch[1];
       const result = await updateStore((store) => {
-        const index = store.birthdays.findIndex((birthday) => birthday.id === birthdayId);
-        if (index === -1) {
-          const error = new Error("Birthday not found");
-          error.statusCode = 404;
-          throw error;
-        }
+        const index = store.birthdays.findIndex((b) => b.id === birthdayId);
+        if (index === -1) { const error = new Error("Birthday not found"); error.statusCode = 404; throw error; }
         const current = store.birthdays[index];
-        const updated = normalizeBirthday({
-          ...current,
-          ...body,
-          id: current.id,
-          created_at: current.created_at
-        });
+        const updated = normalizeBirthday({ ...current, ...body, id: current.id, created_at: current.created_at });
         store.birthdays[index] = updated;
         return updated;
       });
@@ -384,7 +415,6 @@ const server = createServer(async (req, res) => {
 
     if (url.pathname === "/api/settings/serverchan" && req.method === "POST") {
       requireSession(req);
-      requireToken(req, adminToken);
       const body = await readJsonBody(req);
       const sendKey = String(body.sendKey || "").trim();
       await updateStore((store) => {

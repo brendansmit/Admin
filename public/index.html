@@ -22,6 +22,8 @@
           <a href="#birthdays" data-nav="birthdays">Birthdays</a>
           <a href="#calendar" data-nav="calendar">Calendar</a>
           <a href="#settings" data-nav="settings">Settings</a>
+          <a href="/grades" style="margin-top:12px;border-top:1px solid rgba(255,255,255,0.15);padding-top:12px">Grade Exporter ↗</a>
+          <a href="https://serve.inkheron.app" target="_blank" rel="noreferrer">Serve ↗</a>
         </nav>
       </aside>
 
@@ -32,7 +34,6 @@
             <h1>Work time and reminders</h1>
           </div>
           <div class="status-pill" id="apiStatus">Checking server</div>
-          <a class="button-link" href="https://serve.inkheron.app" target="_blank" rel="noreferrer">Serve</a>
           <button type="button" id="logoutButton">Log out</button>
         </header>
 
@@ -122,20 +123,27 @@
             <form class="import-form" id="birthdayImportForm">
               <label class="drop-zone" for="birthdayFile" id="birthdayDropZone">
                 <input id="birthdayFile" name="file" type="file" accept=".csv,.xlsx,.xls">
-                <span>Drop a CSV or Excel file here, or choose a file</span>
+                <span id="dropZoneLabel">Drop a CSV or Excel file here, or choose a file</span>
               </label>
-              <select name="relationship" aria-label="Relationship">
-                <option value="students">Students</option>
-                <option value="colleagues">Colleagues</option>
-                <option value="family">Family</option>
-                <option value="friends">Friends</option>
-                <option value="other">Other</option>
-              </select>
-              <input name="batchTag" placeholder="'27, '26, Year 8" aria-label="Batch tag">
-              <input name="notify_days_before" type="number" min="0" max="30" value="0" aria-label="Days before reminder">
-              <button type="submit">Import birthdays</button>
+              <div class="field-labeled">
+                <span class="field-label">Relationship</span>
+                <select name="relationship" aria-label="Relationship">
+                  <option value="students">Students</option>
+                  <option value="colleagues">Colleagues</option>
+                  <option value="family">Family</option>
+                  <option value="friends">Friends</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div class="field-labeled">
+                <span class="field-label">Batch tag</span>
+                <input name="batchTag" placeholder="e.g. '27, Year 8" aria-label="Batch tag">
+              </div>
+              <button type="submit" id="importBtn">Import birthdays</button>
             </form>
+            <div id="importPreview" class="import-preview" hidden></div>
             <p class="form-note" id="birthdayImportStatus"></p>
+            <button type="button" id="undoImportBtn" class="secondary compact" hidden style="margin-top:6px">Undo last import</button>
           </article>
 
           <article class="panel">
@@ -157,6 +165,11 @@
                 <option value="other">Other</option>
               </select>
               <input name="tag" placeholder="Tag" aria-label="Filter tag">
+              <select name="sort" aria-label="Sort by">
+                <option value="name">Sort: Name</option>
+                <option value="date">Sort: Date</option>
+                <option value="tag">Sort: Tag</option>
+              </select>
               <button type="submit">Filter</button>
             </form>
             <form class="birthday-form" id="birthdayForm">
@@ -182,7 +195,8 @@
                     <th>Relationship</th>
                     <th>Tags</th>
                     <th>Notes</th>
-                    <th></th>
+                    <th>Save</th>
+                    <th>Delete</th>
                   </tr>
                 </thead>
                 <tbody id="birthdayTable"></tbody>

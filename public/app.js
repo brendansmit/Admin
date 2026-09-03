@@ -28,6 +28,10 @@ const birthdayFilters = document.querySelector("#birthdayFilters");
 const birthdayForm = document.querySelector("#birthdayForm");
 const birthdayTable = document.querySelector("#birthdayTable");
 const refreshBirthdaysButton = document.querySelector("#refreshBirthdaysButton");
+const undoImportBtn = document.querySelector("#undoImportBtn");
+const importPreview = document.querySelector("#importPreview");
+const dropZoneLabel = document.querySelector("#dropZoneLabel");
+const importBtn = document.querySelector("#importBtn");
 
 adminTokenInput.value = localStorage.getItem("adminToken") || "dev-admin-token";
 
@@ -223,17 +227,51 @@ async function loadBirthdays() {
   birthdayTable.replaceChildren(...data.birthdays.map(renderBirthdayRow));
 }
 
+function formatBirthdayDisplay(birthday) {
+  if (!birthday.birthdate) return "";
+  const parts = birthday.birthdate.split("-");
+  if (!birthday.has_year || String(parts[0]) === "1900") {
+    // month/day only
+    const d = new Date(2000, parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+  // has year — show date + age
+  const year = parseInt(parts[0], 10);
+  const age = new Date().getFullYear() - year;
+  const d = new Date(year, parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  const formatted = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return `${formatted} (age ${age})`;
+}
+
 function renderBirthdayRow(birthday) {
   const row = document.createElement("tr");
   row.dataset.id = birthday.id;
 
+  const birthdateTd = document.createElement("td");
+  birthdateTd.className = "birthdate-cell";
+  const hasYear = birthday.has_year !== false;
+  let birthdateInput;
+  if (hasYear) {
+    birthdateInput = input("birthdate", birthday.birthdate, "date");
+  } else {
+    // Store as MM-DD text — no year
+    const parts = (birthday.birthdate || "").split("-");
+    const monthDay = parts.length >= 3 ? `${parts[1]}-${parts[2]}` : "";
+    birthdateInput = input("birthdate", monthDay, "text");
+    birthdateInput.placeholder = "MM-DD";
+    birthdateInput.style.width = "80px";
+  }
+  const hasYearHidden = input("has_year", hasYear ? "true" : "false", "hidden");
+  birthdateTd.append(birthdateInput, hasYearHidden);
+
   row.append(
     cell(input("name", birthday.name)),
-    cell(input("birthdate", birthday.birthdate, "date")),
+    birthdateTd,
     cell(selectRelationship(birthday.relationship)),
     cell(input("tags", birthday.tags.join(", "))),
     cell(input("notes", birthday.notes)),
-    actionCell(birthday.id)
+    actionCell(birthday.id),
+    deleteCell(birthday.id)
   );
 
   return row;
@@ -274,6 +312,33 @@ function actionCell(id) {
   button.addEventListener("click", () => saveBirthday(id));
   td.append(button);
   return td;
+}
+
+function deleteCell(id) {
+  const td = document.createElement("td");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "Delete";
+  button.className = "danger compact";
+  button.addEventListener("click", () => deleteBirthday(id));
+  td.append(button);
+  return td;
+}
+
+async function deleteBirthday(id) {
+  if (!confirm("Delete this birthday record?")) return;
+  const response = await fetch(`/api/birthdays/${id}`, {
+    method: "DELETE",
+    headers: authHeaders({})
+  });
+  if (!response.ok) {
+    apiStatus.textContent = "Delete failed";
+    apiStatus.className = "status-pill bad";
+    return;
+  }
+  apiStatus.textContent = "Deleted";
+  apiStatus.className = "status-pill ok";
+  await Promise.all([loadBirthdays(), loadDashboard()]);
 }
 
 async function saveBirthday(id) {
@@ -396,29 +461,48 @@ async function importBirthdays() {
 
   localStorage.setItem("adminToken", adminTokenInput.value);
   const formData = new FormData(birthdayImportForm);
-  birthdayImportStatus.textContent = "Importing";
+  const payload = {
+    filename: file.name,
+    contentBase64: await fileToBase64(file),
+    relationship: formData.get("relationship"),
+    batchTag: formData.get("batchTag"),
+  };
+
+  birthdayImportStatus.textContent = "Importing...";
+  importBtn.disabled = true;
+  undoImportBtn.hidden = true;
+
   const response = await fetch("/api/birthdays/import", {
     method: "POST",
     headers: authHeaders({ "content-type": "application/json" }),
-    body: JSON.stringify({
-      filename: file.name,
-      contentBase64: await fileToBase64(file),
-      relationship: formData.get("relationship"),
-      batchTag: formData.get("batchTag"),
-      notify_days_before: Number(formData.get("notify_days_before") || 0)
-    })
+    body: JSON.stringify(payload)
   });
 
-  if (handleUnauthorized(response)) {
-    return;
-  }
+  importBtn.disabled = false;
+  if (handleUnauthorized(response)) return;
   const result = await response.json();
   if (!response.ok) {
     birthdayImportStatus.textContent = result.error || "Import failed";
     return;
   }
 
-  birthdayImportStatus.textContent = `Imported ${result.imported.length}. Skipped ${result.skipped.length}.`;
+  birthdayImportStatus.textContent = `Imported ${result.imported.length}${result.skipped.length ? `. Skipped ${result.skipped.length}.` : "."}`;
+  undoImportBtn.hidden = false;
+  await Promise.all([loadBirthdays(), loadDashboard()]);
+}
+
+async function undoImport() {
+  const response = await fetch("/api/birthdays/undo", {
+    method: "POST",
+    headers: authHeaders({})
+  });
+  if (!response.ok) {
+    birthdayImportStatus.textContent = "Undo failed";
+    return;
+  }
+  const result = await response.json();
+  birthdayImportStatus.textContent = `Undo: removed ${result.deleted} records.`;
+  undoImportBtn.hidden = true;
   await Promise.all([loadBirthdays(), loadDashboard()]);
 }
 
@@ -559,7 +643,34 @@ birthdayDropZone.addEventListener("drop", (event) => {
   birthdayDropZone.classList.remove("dragging");
   if (event.dataTransfer.files.length) {
     birthdayFile.files = event.dataTransfer.files;
+    updateDropZoneLabel();
   }
+});
+
+birthdayFile.addEventListener("change", () => {
+  updateDropZoneLabel();
+});
+
+function updateDropZoneLabel() {
+  const file = birthdayFile.files[0];
+  if (file) {
+    dropZoneLabel.textContent = `✓ ${file.name}`;
+    birthdayDropZone.classList.add("file-loaded");
+    importPreview.hidden = false;
+    importPreview.textContent = "File loaded — click \"Import birthdays\" to proceed.";
+    undoImportBtn.hidden = true;
+    birthdayImportStatus.textContent = "";
+  } else {
+    dropZoneLabel.textContent = "Drop a CSV or Excel file here, or choose a file";
+    birthdayDropZone.classList.remove("file-loaded");
+    importPreview.hidden = true;
+  }
+}
+
+undoImportBtn.addEventListener("click", () => {
+  undoImport().catch(() => {
+    birthdayImportStatus.textContent = "Undo failed";
+  });
 });
 
 runRemindersButton.addEventListener("click", () => {
