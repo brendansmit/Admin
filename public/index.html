@@ -34,6 +34,7 @@
             <h1>Work time and reminders</h1>
           </div>
           <div class="status-pill" id="apiStatus">Checking server</div>
+          <a href="#settings" id="passwordNudge" hidden style="color:#b45309;font-size:0.8rem;text-decoration:underline">Still on the starter password</a>
           <button type="button" id="logoutButton">Log out</button>
         </header>
 
@@ -251,6 +252,24 @@
               <input id="serverChanKey" name="serverChanKey" type="password" autocomplete="off" placeholder="SCT...">
               <button type="submit">Save</button>
             </div>
+          </form>
+        </article>
+
+        <article class="panel settings-panel">
+          <div>
+            <p class="eyebrow">Login</p>
+            <h2>Password</h2>
+            <p>One password covers this page and the Grade Exporter. At least eight characters.</p>
+          </div>
+          <form id="passwordForm">
+            <label for="currentPassword">Current password</label>
+            <input id="currentPassword" name="currentPassword" type="password" autocomplete="current-password" required>
+            <label for="newPassword">New password</label>
+            <div class="inline-form">
+              <input id="newPassword" name="newPassword" type="password" autocomplete="new-password" minlength="8" required>
+              <button type="submit">Change</button>
+            </div>
+            <p id="passwordStatus" class="form-status"></p>
           </form>
         </article>
         </section>

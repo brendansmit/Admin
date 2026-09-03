@@ -16,9 +16,12 @@ import {
 import {
   createSession,
   destroySession,
+  initAuth,
+  passwordIsInitial,
   requireSession,
   sessionCookie,
   sessionFromRequest,
+  setPassword,
   validatePassword
 } from "./auth.js";
 
@@ -197,7 +200,32 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/session" && req.method === "GET") {
-      sendJson(res, 200, { authenticated: Boolean(sessionFromRequest(req)) });
+      const authenticated = Boolean(sessionFromRequest(req));
+      sendJson(res, 200, { authenticated, passwordIsInitial: authenticated && passwordIsInitial() });
+      return;
+    }
+
+    if (url.pathname === "/api/password" && req.method === "POST") {
+      requireSession(req);
+      const body = await readJsonBody(req);
+      if (!validatePassword(body.currentPassword)) {
+        sendJson(res, 401, { error: "invalid_password" });
+        return;
+      }
+      const next = String(body.newPassword || "");
+      if (next.length < 8) {
+        sendJson(res, 400, { error: "too_short" });
+        return;
+      }
+      await setPassword(next);
+      // Changing it closes every session, this one included, so hand back a
+      // fresh one rather than bouncing the person who just changed it.
+      const session = createSession();
+      res.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "set-cookie": sessionCookie(req, session)
+      });
+      res.end(JSON.stringify({ ok: true }));
       return;
     }
 
@@ -490,6 +518,9 @@ const server = createServer(async (req, res) => {
 });
 
 if (process.env.NODE_ENV !== "test") {
+  // The password and any sessions left over from before a restart have to be
+  // loaded before the first request can be judged.
+  await initAuth();
   server.listen(port, "127.0.0.1", () => {
     console.log(`InkHeron Admin listening on http://127.0.0.1:${port}`);
   });

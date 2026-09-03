@@ -18,6 +18,9 @@ const reminderList = document.querySelector("#reminderList");
 const reminderEmpty = document.querySelector("#reminderEmpty");
 const runRemindersButton = document.querySelector("#runRemindersButton");
 const logoutButton = document.querySelector("#logoutButton");
+const passwordForm = document.querySelector("#passwordForm");
+const passwordStatus = document.querySelector("#passwordStatus");
+const passwordNudge = document.querySelector("#passwordNudge");
 const navLinks = document.querySelectorAll("[data-nav]");
 const pages = document.querySelectorAll("[data-page]");
 const birthdayImportForm = document.querySelector("#birthdayImportForm");
@@ -544,6 +547,42 @@ async function runReminders() {
   apiStatus.className = "status-pill ok";
   await loadDashboard();
 }
+
+passwordForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const data = new FormData(passwordForm);
+  passwordStatus.textContent = "Changing";
+  const response = await fetch("/api/password", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      currentPassword: data.get("currentPassword"),
+      newPassword: data.get("newPassword")
+    })
+  });
+  if (response.ok) {
+    passwordForm.reset();
+    passwordStatus.textContent = "Password changed. Other devices have been signed out.";
+    passwordNudge.hidden = true;
+    return;
+  }
+  const result = await response.json().catch(() => ({}));
+  passwordStatus.textContent = result.error === "too_short"
+    ? "Use at least eight characters."
+    : "That current password is not right.";
+});
+
+async function checkPasswordNudge() {
+  try {
+    const response = await fetch("/api/session");
+    const session = await response.json();
+    passwordNudge.hidden = !session.passwordIsInitial;
+  } catch {
+    passwordNudge.hidden = true;
+  }
+}
+
+checkPasswordNudge();
 
 settingsForm.addEventListener("submit", (event) => {
   event.preventDefault();
