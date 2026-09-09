@@ -9,10 +9,6 @@
   "scripts": {
     "start": "node src/server.js",
     "serve:start": "node serve/server.js",
-    "serve:test": "node --test serve/test/*.test.js",
-    "test": "node --test test/*.test.js"
-  },
-  "dependencies": {
-    "xlsx": "^0.18.5"
+    "test": "node --test serve/test/*.test.js"
   }
 }

@@ -1,18 +1,8 @@
 import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { extname, join, normalize } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readStore, updateStore } from "./storage.js";
-import { markWorkEvent, normalizeWorkEvent, setWorkEventIgnored, summarizeWork } from "./work-log.js";
-import { dueReminderEvents, formatReminderMessage, normalizeCalendarEvent, upcomingEvents } from "./calendar.js";
-import { sendServerChan } from "./serverchan.js";
-import {
-  dueBirthdayReminders,
-  normalizeBirthday,
-  parseBirthdayImport,
-  upcomingBirthdays
-} from "./birthdays.js";
+import { updateStore } from "./storage.js";
 import {
   createSession,
   destroySession,
@@ -25,57 +15,25 @@ import {
   validatePassword
 } from "./auth.js";
 
+// This service used to be the whole admin site. Grade Importer now sits at the
+// root of admin.inkheron.app, so all that is left here is the login gate that
+// nginx checks with auth_request, the password form behind it, and the
+// ServerChan key, which is parked until something is wired to send with it.
+
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const rootDir = join(__dirname, "..");
 const publicDir = join(rootDir, "public");
 
 const port = Number.parseInt(process.env.PORT || "3468", 10);
-const webhookToken = process.env.WEBHOOK_TOKEN || "dev-webhook-token";
-const adminToken = process.env.ADMIN_TOKEN || "dev-admin-token";
-let lastImportIds = [];
-const reminderCronToken = process.env.REMINDER_CRON_TOKEN || "dev-cron-token";
-
-const contentTypes = {
-  ".css": "text/css; charset=utf-8",
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".svg": "image/svg+xml"
-};
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(payload));
 }
 
-function sendText(res, statusCode, message) {
-  res.writeHead(statusCode, { "content-type": "text/plain; charset=utf-8" });
-  res.end(message);
-}
-
 function redirect(res, location) {
   res.writeHead(302, { location });
   res.end();
-}
-
-function bearerToken(req) {
-  const header = req.headers.authorization || "";
-  const [scheme, token] = header.split(" ");
-  return scheme?.toLowerCase() === "bearer" ? token : "";
-}
-
-function requireToken(req, expectedToken) {
-  if (bearerToken(req) !== expectedToken) {
-    const error = new Error("Unauthorized");
-    error.statusCode = 401;
-    throw error;
-  }
-}
-
-function requireSessionUnlessCron(req) {
-  if (req.headers["x-cron-token"] !== reminderCronToken) {
-    requireSession(req);
-  }
 }
 
 async function readJsonBody(req) {
@@ -97,93 +55,10 @@ async function readJsonBody(req) {
   }
 }
 
-async function serveStatic(req, res, { authenticated = false, pathname = "" } = {}) {
-  const url = new URL(pathname || req.url, `http://${req.headers.host || "localhost"}`);
-  const cleanPath = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
-  const relativePath = cleanPath === "/" ? "index.html" : cleanPath.replace(/^[/\\]/, "");
-
-  if (!authenticated && !["login.html", "login.js", "styles.css"].includes(relativePath)) {
-    redirect(res, "/login");
-    return;
-  }
-
-  const filePath = join(publicDir, relativePath);
-
-  if (!filePath.startsWith(publicDir)) {
-    sendText(res, 403, "Forbidden");
-    return;
-  }
-
-  try {
-    const body = await readFile(filePath);
-    res.writeHead(200, {
-      "content-type": contentTypes[extname(filePath)] || "application/octet-stream"
-    });
-    res.end(body);
-  } catch (error) {
-    if (relativePath !== "index.html") {
-      sendText(res, 404, "Not found");
-      return;
-    }
-    throw error;
-  }
-}
-
-function formatChinaTime(isoDate) {
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Shanghai"
-  }).format(new Date(isoDate));
-}
-
-function formatArrivalMessage(event) {
-  return [
-    "Arrived at work",
-    "",
-    `Location: ${event.location}`,
-    `Device: ${event.device || "Unknown"}`,
-    `Time: ${formatChinaTime(event.occurred_at)}`
-  ].join("\n");
-}
-
-function formatCombinedReminderMessage(calendarEvents, birthdays) {
-  const lines = ["InkHeron reminders", ""];
-
-  if (birthdays.length) {
-    lines.push("Birthdays");
-    for (const birthday of birthdays) {
-      const parts = [birthday.next_date, birthday.name, birthday.relationship];
-      if (birthday.tags.length) {
-        parts.push(birthday.tags.join(", "));
-      }
-      if (birthday.notes) {
-        parts.push(birthday.notes);
-      }
-      lines.push(`- ${parts.filter(Boolean).join(" | ")}`);
-    }
-    lines.push("");
-  }
-
-  if (calendarEvents.length) {
-    lines.push(formatReminderMessage(calendarEvents));
-  }
-
-  return lines.join("\n").trim();
-}
-
-async function notifyArrivalIfNeeded(sendKey, event) {
-  if (!sendKey || event.duplicate || event.event_type !== "arrive") {
-    return { sent: false };
-  }
-
-  try {
-    await sendServerChan(sendKey, "Arrived at work", formatArrivalMessage(event));
-    return { sent: true };
-  } catch (error) {
-    console.error("ServerChan arrival notification failed:", error.message);
-    return { sent: false, error: "serverchan_failed" };
-  }
+async function serveLoginPage(res) {
+  const body = await readFile(join(publicDir, "login.html"));
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  res.end(body);
 }
 
 const server = createServer(async (req, res) => {
@@ -265,182 +140,6 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (url.pathname === "/api/dashboard" && req.method === "GET") {
-      requireSession(req);
-      const store = await readStore();
-      const summary = summarizeWork(store.workEvents);
-      const reminders = upcomingEvents(store.calendarEvents);
-      const birthdayReminders = upcomingBirthdays(store.birthdays);
-      sendJson(res, 200, {
-        ...summary,
-        reminders,
-        birthdays: {
-          total: store.birthdays.length,
-          upcoming: birthdayReminders
-        },
-        nextReminder: reminders[0] || null,
-        settings: {
-          hasServerChanKey: Boolean(store.settings.serverChanSendKey)
-        }
-      });
-      return;
-    }
-
-    if (url.pathname === "/api/birthdays" && req.method === "GET") {
-      requireSession(req);
-      const store = await readStore();
-      const query = String(url.searchParams.get("q") || "").trim().toLowerCase();
-      const relationship = String(url.searchParams.get("relationship") || "").trim();
-      const tag = String(url.searchParams.get("tag") || "").trim();
-      const sort = String(url.searchParams.get("sort") || "name").trim();
-      const birthdays = store.birthdays
-        .filter((birthday) => !query || birthday.name.toLowerCase().includes(query))
-        .filter((birthday) => !relationship || birthday.relationship === relationship)
-        .filter((birthday) => !tag || birthday.tags.includes(tag))
-        .sort((a, b) => {
-          if (sort === "date") {
-            // Compare MM-DD portion only so sort is calendar-order regardless of year
-            return (a.birthdate || "").slice(5).localeCompare((b.birthdate || "").slice(5));
-          }
-          if (sort === "tag") {
-            const aTag = (a.tags || [])[0] || "￿";
-            const bTag = (b.tags || [])[0] || "￿";
-            return aTag.localeCompare(bTag) || a.name.localeCompare(b.name);
-          }
-          return a.name.localeCompare(b.name);
-        });
-      const tags = [...new Set(store.birthdays.flatMap((birthday) => birthday.tags))].sort();
-      sendJson(res, 200, {
-        birthdays,
-        tags,
-        upcoming: upcomingBirthdays(store.birthdays, new Date(), 30)
-      });
-      return;
-    }
-
-    if (url.pathname === "/api/work-log" && req.method === "POST") {
-      requireToken(req, webhookToken);
-      const body = await readJsonBody(req);
-      const result = await updateStore((store) => {
-        const event = markWorkEvent(store, normalizeWorkEvent(body));
-        return {
-          event,
-          serverChanSendKey: store.settings.serverChanSendKey
-        };
-      });
-      const notification = await notifyArrivalIfNeeded(result.serverChanSendKey, result.event);
-      sendJson(res, result.event.duplicate ? 202 : 201, { event: result.event, notification });
-      return;
-    }
-
-    if (url.pathname === "/api/work-events" && req.method === "POST") {
-      requireSession(req);
-      const body = await readJsonBody(req);
-      const event = await updateStore((store) =>
-        markWorkEvent(store, normalizeWorkEvent({ ...body, source: body.source || "manual_admin" }))
-      );
-      sendJson(res, 201, { event });
-      return;
-    }
-
-    const workEventPatchMatch = url.pathname.match(/^\/api\/work-events\/([^/]+)$/);
-    if (workEventPatchMatch && req.method === "PATCH") {
-      requireSession(req);
-      const body = await readJsonBody(req);
-      const eventId = workEventPatchMatch[1];
-      const event = await updateStore((store) => setWorkEventIgnored(store, eventId, Boolean(body.ignored)));
-      sendJson(res, 200, { event });
-      return;
-    }
-
-    if (url.pathname === "/api/calendar-events" && req.method === "POST") {
-      requireSession(req);
-      const body = await readJsonBody(req);
-      const event = normalizeCalendarEvent(body);
-      await updateStore((store) => {
-        store.calendarEvents.push(event);
-      });
-      sendJson(res, 201, { event });
-      return;
-    }
-
-    if (url.pathname === "/api/birthdays" && req.method === "POST") {
-      requireSession(req);
-      const body = await readJsonBody(req);
-      const birthday = normalizeBirthday(body);
-      await updateStore((store) => {
-        store.birthdays.push(birthday);
-      });
-      sendJson(res, 201, { birthday });
-      return;
-    }
-
-    if (url.pathname === "/api/birthdays/preview" && req.method === "POST") {
-      requireSession(req);
-      const body = await readJsonBody(req);
-      const parsed = parseBirthdayImport(body);
-      sendJson(res, 200, { birthdays: parsed.birthdays, skipped: parsed.skipped });
-      return;
-    }
-
-    if (url.pathname === "/api/birthdays/import" && req.method === "POST") {
-      requireSession(req);
-      const body = await readJsonBody(req);
-      const parsed = parseBirthdayImport(body);
-      const result = await updateStore((store) => {
-        const seen = new Set(store.birthdays.map((b) => b.name.toLowerCase() + ":" + b.birthdate));
-        const imported = [];
-        const skipped = [...parsed.skipped];
-        for (const birthday of parsed.birthdays) {
-          const key = birthday.name.toLowerCase() + ":" + birthday.birthdate;
-          if (seen.has(key)) { skipped.push({ row: null, reason: "Duplicate skipped: " + birthday.name }); continue; }
-          seen.add(key);
-          store.birthdays.push(birthday);
-          imported.push(birthday);
-        }
-        return { imported, skipped };
-      });
-      lastImportIds = result.imported.map((b) => b.id);
-      sendJson(res, 201, result);
-      return;
-    }
-
-    if (url.pathname === "/api/birthdays/undo" && req.method === "POST") {
-      requireSession(req);
-      if (!lastImportIds.length) { sendJson(res, 400, { error: "Nothing to undo" }); return; }
-      const ids = new Set(lastImportIds);
-      await updateStore((store) => { store.birthdays = store.birthdays.filter((b) => !ids.has(b.id)); });
-      const count = lastImportIds.length;
-      lastImportIds = [];
-      sendJson(res, 200, { removed: count });
-      return;
-    }
-
-    const birthdayPatchMatch = url.pathname.match(/^\/api\/birthdays\/([^/]+)$/);
-    if (birthdayPatchMatch && req.method === "DELETE") {
-      requireSession(req);
-      const birthdayId = birthdayPatchMatch[1];
-      await updateStore((store) => { store.birthdays = store.birthdays.filter((b) => b.id !== birthdayId); });
-      sendJson(res, 200, { ok: true });
-      return;
-    }
-
-    if (birthdayPatchMatch && req.method === "PATCH") {
-      requireSession(req);
-      const body = await readJsonBody(req);
-      const birthdayId = birthdayPatchMatch[1];
-      const result = await updateStore((store) => {
-        const index = store.birthdays.findIndex((b) => b.id === birthdayId);
-        if (index === -1) { const error = new Error("Birthday not found"); error.statusCode = 404; throw error; }
-        const current = store.birthdays[index];
-        const updated = normalizeBirthday({ ...current, ...body, id: current.id, created_at: current.created_at });
-        store.birthdays[index] = updated;
-        return updated;
-      });
-      sendJson(res, 200, { birthday: result });
-      return;
-    }
-
     if (url.pathname === "/api/settings/serverchan" && req.method === "POST") {
       requireSession(req);
       const body = await readJsonBody(req);
@@ -452,61 +151,19 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (url.pathname === "/api/notifications/run" && req.method === "POST") {
-      requireSessionUnlessCron(req);
-      requireToken(req, adminToken);
-      const result = await updateStore(async (store) => {
-        const dueEvents = dueReminderEvents(store.calendarEvents, store.notificationLog);
-        const dueBirthdays = dueBirthdayReminders(store.birthdays, store.notificationLog);
-        if (!dueEvents.length && !dueBirthdays.length) {
-          return { sent: 0, events: [] };
-        }
-
-        const message = formatCombinedReminderMessage(dueEvents, dueBirthdays);
-        await sendServerChan(store.settings.serverChanSendKey, "InkHeron reminders", message);
-        const sentAt = new Date().toISOString();
-        const sentOn = sentAt.slice(0, 10);
-        for (const event of dueEvents) {
-          store.notificationLog.push({
-            id: randomUUID(),
-            calendar_event_id: event.id,
-            reminder_for: event.date,
-            sent_at: sentAt,
-            sent_on: sentOn,
-            title: event.title
-          });
-        }
-        for (const birthday of dueBirthdays) {
-          store.notificationLog.push({
-            id: randomUUID(),
-            birthday_id: birthday.id,
-            reminder_for: birthday.next_date,
-            sent_at: sentAt,
-            sent_on: sentOn,
-            title: birthday.name
-          });
-        }
-        return {
-          sent: dueEvents.length + dueBirthdays.length,
-          events: dueEvents,
-          birthdays: dueBirthdays
-        };
-      });
-      sendJson(res, 200, result);
-      return;
-    }
-
     if (url.pathname.startsWith("/api/")) {
       sendJson(res, 404, { error: "not_found" });
       return;
     }
 
     if (url.pathname === "/login" || url.pathname === "/login.html") {
-      await serveStatic(req, res, { authenticated: true, pathname: "/login.html" });
+      await serveLoginPage(res);
       return;
     }
 
-    await serveStatic(req, res, { authenticated: Boolean(sessionFromRequest(req)) });
+    // Nothing else is served from here any more. nginx sends the rest of the
+    // site to Grade Importer, so anything that lands here is a stale link.
+    redirect(res, "/");
   } catch (error) {
     if (error.statusCode) {
       sendJson(res, error.statusCode, { error: error.message });
