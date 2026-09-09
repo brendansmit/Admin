@@ -134,3 +134,58 @@ logs in, and `/grades` then loads the gradebook. `npm test` 12/12.
 
 **Note:** delete the `auth` block from `data/store.json` to reset the password
 back to `ChangeMe1`.
+
+## 2026-09-09 Grade Importer becomes the site, Admin becomes the door
+
+Asked for: pull Grade Importer forward from `/grades` to the root of
+`admin.inkheron.app` so it is the site rather than a sub page. The time,
+calendar and birthday sections are useless now because that work belongs to
+Cadence, so they go, along with the external links to Serve and to Grade
+Importer itself. Keep the login exactly as it is, and keep ServerChan parked in
+case it gets wired to grade release or student submissions later.
+
+Removed: `public/index.html`, `public/app.js`, `public/styles.css`,
+`public/login.js`, `src/birthdays.js`, `src/calendar.js`, `src/work-log.js`,
+their three test files, and the routes `/api/dashboard`, `/api/birthdays` and
+its variants, `/api/work-log`, `/api/work-events`, `/api/calendar-events` and
+`/api/notifications/run`. The `xlsx` dependency went with the birthday import.
+
+Kept: login, session, logout, auth-check, password, health, and
+`/api/settings/serverchan` with `serverchan.js` behind it.
+
+Decisions:
+- `login.html` now carries its own styles and script inline. It was the only
+  page still needing `styles.css` and `login.js`, and inlining them means nginx
+  only has to route one page path here instead of three.
+- `/api/notifications/run` went even though it was a ServerChan caller. It only
+  ever sent calendar and birthday reminders, and both are gone, so it had
+  nothing left to send. `sendServerChan` itself is untouched.
+- Anything that is not an API route or the login page now 302s to `/`, which is
+  Grade Importer.
+- `data/store.json` is left alone. The old work events and birthdays are still
+  in it. A copy of the live one was pulled down before any of this.
+- The password change and ServerChan key moved into Grade Importer's Settings
+  tab. They are the only two controls that survived, and leaving them on a page
+  nobody can reach would have stranded them.
+
+nginx was rewritten. `location /` is now Grade Importer on 5051 behind
+`auth_request`, `location /api/` is the same but returns a plain 401 so the page
+can react instead of following a redirect to HTML, a regex location keeps the
+login service's paths on 3474 outside the gate, `/grades` and `/grades/` 301 to
+`/`, and `/api/sync` is still open on its Bearer token. `@login` now points at
+`/login` rather than `/`, which would have looped. Backup of the previous config
+at `/root/admin.inkheron.app.premerge.bak`.
+
+**Verified live:** logged out, `/` 302s to `/login`, `/login` renders at 200 with
+its inlined styles, `/grades` and `/grades/` 301 to `/`, `/api/roster` and
+`/api/attendance/overview` 401, `/api/session` and `/api/health` 200. Against a
+scratch copy of the store: login, auth-check, session, ServerChan save, password
+change with its fresh cookie, and logout all behave. Dead routes 404. `npm test`
+6/6 (the Serve suite, which is all that is left).
+
+**Not verified:** the logged-in round trip through nginx on the live host. The
+password is no longer the starter one and I do not have it.
+
+**Note:** ServerChan is wired to nothing. It does not fire on grade release or
+student submission today, and nothing in the workspace calls it apart from
+Speed Dating's own separate copy.
