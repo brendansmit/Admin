@@ -189,3 +189,56 @@ password is no longer the starter one and I do not have it.
 **Note:** ServerChan is wired to nothing. It does not fire on grade release or
 student submission today, and nothing in the workspace calls it apart from
 Speed Dating's own separate copy.
+
+## 2026-09-21 Hosting Merit for a colleague
+
+Six stages, all of them landed. Admin's share of the work, in order:
+
+**One account per person** (`95ea193`). The shared password became a list of
+accounts, each with its own role, its own starter password and its own session.
+Signing one person out leaves everybody else where they were. A session from
+before accounts existed is adopted by the one admin account rather than being
+thrown away, so the deploy did not sign me out.
+
+**A dataset per account** (`d2a887a`). Each account names the sqlite file Merit
+opens for it. The owner keeps `grades.db`; anybody else gets
+`grades_<dataset>.db`. A dataset name that tries to point outside the data
+directory is flattened, not followed.
+
+**Feature flags** (`9953a51`, then `6f099e9` and `a979cf9`). The second outward
+flag was renamed after something Merit actually talks to. Then the flags grew a
+member per Merit tab: attendance, assignments, imports, history, roster and
+templates, all defaulting true. That default is what carried every existing
+account across the change without losing a tab, because `features()` spreads the
+defaults under whatever the record holds and no record held these. There was no
+migration to write. A new account copies the most recently created teacher's
+flags, so adding a second colleague is not eight checkboxes again.
+
+**Opening a teacher's account** (`6efa6cb`, `84088b8`). An admin views a
+teacher's Merit from inside their own session. No second password. The session
+still belongs to whoever logged in, so acting is a view and never a way to
+become somebody: nothing reads role off the borrowed account. The account being
+looked at is told afterwards, in an access log that closes its row when the
+session ends or expires. Anything an account may only do as itself answers 409
+with a code rather than a sentence, so the page writes the wording.
+
+**The bug that mattered.** Nobody could finish a first login in production:
+"could not save that password". Not the password code. nginx's exempt-location
+regex anchored `password` with `$`, so `/api/password/first` fell through to the
+`auth_request` gate, which returns 401 for exactly the accounts still on a
+starter password. Fixed on the server to `password(/first)?`, backup at
+`/etc/nginx/sites-available/admin.inkheron.app.bak-2026-09-21`. Stage 2 had
+therefore never worked end to end, because the owner account already had a
+password and no local test goes through nginx.
+
+**Worth saying plainly:** nginx is the only part of this system with no copy in
+any repo, and it silently broke a feature that passed every local test.
+
+**Undeployed at the time of writing:** `6f099e9` and `a979cf9`. Admin has to go
+out before Merit, or Merit asks for tab flags from a service that does not know
+what they are.
+
+**Security sweep, suggested and not built:** `hmac.compare_digest` in Merit's
+sync key check; narrow the `Access-Control-Allow-Origin: *` on `/api/sync`;
+nginx `limit_req` on `/api/login`; and make `cookieSecret()` throw in production
+rather than fall back to `"dev-session-secret"`.
