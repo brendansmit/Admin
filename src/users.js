@@ -14,6 +14,11 @@ const initialPassword = "ChangeMe1";
 // by default.
 const defaultFeatures = { inkheron: false, cadence: false };
 
+// Which set of gradebook data the account opens. Merit keeps one database file
+// per dataset, so two accounts never see a trace of each other. "default" is
+// the file that was there before accounts existed, and it stays mine.
+const ownerDataset = "default";
+
 let users = [];
 
 function loginKey(name) {
@@ -37,13 +42,17 @@ function publicUser(user) {
     mustChangePassword: Boolean(user.mustChangePassword),
     passwordIsInitial: hashMatches(initialPassword, user.passwordHash),
     features: features(user),
+    dataset: user.dataset || user.id,
     createdAt: user.createdAt || null
   };
 }
 
-function makeUser({ name, role = "teacher", password = initialPassword, mustChangePassword = true, features: wanted } = {}) {
+function makeUser({ name, role = "teacher", password = initialPassword, mustChangePassword = true, features: wanted, dataset } = {}) {
+  const id = randomUUID();
   return {
-    id: randomUUID(),
+    id,
+    // Its own by default. Nothing a new account does can reach another one's.
+    dataset: dataset || id,
     name: String(name || "").trim(),
     passwordHash: hashPassword(password),
     role: role === "admin" ? "admin" : "teacher",
@@ -67,6 +76,17 @@ async function initUsers() {
   const store = await readStore();
   users = Array.isArray(store.users) ? store.users : [];
   if (users.length) {
+    // Records written before datasets existed. The first account is the one the
+    // shared password became, so the data already on disk is its own.
+    const missing = users.filter((user) => !user.dataset);
+    if (missing.length) {
+      users.forEach((user, index) => {
+        if (!user.dataset) {
+          user.dataset = index === 0 ? ownerDataset : user.id;
+        }
+      });
+      await save();
+    }
     return;
   }
 
@@ -77,7 +97,8 @@ async function initUsers() {
     name: process.env.ADMIN_USER_NAME || "Brendan",
     role: "admin",
     mustChangePassword: !inherited,
-    features: { inkheron: true, cadence: true }
+    features: { inkheron: true, cadence: true },
+    dataset: ownerDataset
   });
   if (inherited) {
     owner.passwordHash = inherited;
@@ -223,6 +244,7 @@ export {
   findByLogin,
   initialPassword,
   initUsers,
+  ownerDataset,
   listUsers,
   publicUser,
   removeUser,

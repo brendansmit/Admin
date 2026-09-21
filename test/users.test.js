@@ -224,3 +224,23 @@ test("a guest can be deleted and stops being a way in", async () => {
   assert.equal(after.authenticated, false);
   assert.equal((await login("Sarah", "ChangeMe1")).response.status, 401);
 });
+
+// Stage 3 leans on this: Merit picks a database file from the dataset name, so
+// an account with no dataset of its own would open somebody else's gradebook.
+test("every account carries its own dataset, and only mine is the original", async () => {
+  const mine = await call("/api/whoami", { cookie: ownerCookie }).then((r) => r.json());
+  assert.equal(mine.dataset, "default");
+
+  const made = await call("/api/users", {
+    method: "POST",
+    cookie: ownerCookie,
+    body: { name: "Dana" }
+  }).then((r) => r.json());
+
+  assert.equal(made.user.dataset, made.user.id);
+  assert.notEqual(made.user.dataset, "default");
+
+  const dana = await login("Dana", "ChangeMe1");
+  const hers = await call("/api/whoami", { cookie: dana.cookie }).then((r) => r.json());
+  assert.equal(hers.dataset, made.user.id);
+});
