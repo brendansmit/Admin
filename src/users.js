@@ -12,7 +12,10 @@ const initialPassword = "ChangeMe1";
 // What an account is allowed to reach beyond the gradebook itself. Off for a
 // new account: nothing that talks to another one of my services is handed out
 // by default.
-const defaultFeatures = { inkheron: false, cadence: false };
+// "sync" is the mirror between a local copy and the server, and the shared key
+// that drives it. "cadence" was the name here first, from a service Merit turns
+// out not to talk to at all.
+const defaultFeatures = { inkheron: false, sync: false };
 
 // Which set of gradebook data the account opens. Merit keeps one database file
 // per dataset, so two accounts never see a trace of each other. "default" is
@@ -26,7 +29,12 @@ function loginKey(name) {
 }
 
 function features(user) {
-  return { ...defaultFeatures, ...(user?.features || {}) };
+  const held = { ...(user?.features || {}) };
+  if (held.cadence !== undefined) {
+    held.sync = held.sync ?? held.cadence;
+    delete held.cadence;
+  }
+  return { ...defaultFeatures, ...held };
 }
 
 // Never leaves this module with a hash in it.
@@ -97,7 +105,7 @@ async function initUsers() {
     name: process.env.ADMIN_USER_NAME || "Brendan",
     role: "admin",
     mustChangePassword: !inherited,
-    features: { inkheron: true, cadence: true },
+    features: { inkheron: true, sync: true },
     dataset: ownerDataset
   });
   if (inherited) {

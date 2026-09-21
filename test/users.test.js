@@ -115,7 +115,7 @@ test("an admin can add a guest, and a guest starts on ChangeMe1", async () => {
   assert.equal(user.role, "teacher");
   assert.equal(user.mustChangePassword, true);
   // Nothing that talks to another service is handed out by default.
-  assert.deepEqual(user.features, { inkheron: false, cadence: false });
+  assert.deepEqual(user.features, { inkheron: false, sync: false });
 
   const { response } = await login("sarah", "ChangeMe1");
   assert.equal(response.status, 200);
@@ -243,4 +243,15 @@ test("every account carries its own dataset, and only mine is the original", asy
   const dana = await login("Dana", "ChangeMe1");
   const hers = await call("/api/whoami", { cookie: dana.cookie }).then((r) => r.json());
   assert.equal(hers.dataset, made.user.id);
+});
+
+// The flag was called cadence first. Records written under that name keep the
+// answer they had rather than quietly falling back to off.
+test("an old cadence flag is read as the sync flag", async () => {
+  const { publicUser } = await import("../src/users.js");
+  const asOn = publicUser({ id: "a", name: "A", role: "teacher", features: { cadence: true } });
+  assert.deepEqual(asOn.features, { inkheron: false, sync: true });
+
+  const asOff = publicUser({ id: "b", name: "B", role: "teacher", features: { cadence: false } });
+  assert.deepEqual(asOff.features, { inkheron: false, sync: false });
 });
