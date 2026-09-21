@@ -9,13 +9,27 @@ import { readStore, updateStore } from "./storage.js";
 
 const initialPassword = "ChangeMe1";
 
-// What an account is allowed to reach beyond the gradebook itself. Off for a
-// new account: nothing that talks to another one of my services is handed out
-// by default.
-// "sync" is the mirror between a local copy and the server, and the shared key
-// that drives it. "cadence" was the name here first, from a service Merit turns
-// out not to talk to at all.
-const defaultFeatures = { inkheron: false, sync: false };
+// What an account is allowed to reach. Two kinds of flag live here.
+//
+// The first two reach another one of my services, so they are off unless
+// somebody turns them on. "sync" is the mirror between a local copy and the
+// server, and the shared key behind it. "cadence" was the name here first,
+// from a service Merit turns out not to talk to at all.
+//
+// The rest are Merit's own tabs. They default on, which is what carries every
+// account that already exists across this change without losing a tab: an
+// absent flag reads as the default, and none of them have these yet. Gradebook
+// and Settings are not here, because neither is ever optional.
+const defaultFeatures = {
+  inkheron: false,
+  sync: false,
+  attendance: true,
+  assignments: true,
+  imports: true,
+  history: true,
+  roster: true,
+  templates: true
+};
 
 // Which set of gradebook data the account opens. Merit keeps one database file
 // per dataset, so two accounts never see a trace of each other. "default" is
@@ -149,6 +163,20 @@ function validateUserPassword(user, password) {
   return Boolean(user) && hashMatches(password, user.passwordHash);
 }
 
+/**
+ * What a new account starts with: a copy of the most recently created teacher's
+ * flags, so adding the second colleague does not mean setting eight checkboxes
+ * again. The first teacher has nobody to copy and takes the defaults.
+ */
+function inheritedFeatures() {
+  const teachers = users.filter((user) => user.role !== "admin");
+  if (!teachers.length) {
+    return { ...defaultFeatures };
+  }
+  const latest = teachers.reduce((a, b) => ((a.createdAt || "") >= (b.createdAt || "") ? a : b));
+  return features(latest);
+}
+
 async function addUser({ name, role, features: wanted }) {
   const clean = String(name || "").trim();
   if (clean.length < 2) {
@@ -157,7 +185,7 @@ async function addUser({ name, role, features: wanted }) {
   if (findByLogin(clean)) {
     throw fail(409, "name_taken");
   }
-  const user = makeUser({ name: clean, role, features: wanted });
+  const user = makeUser({ name: clean, role, features: wanted || inheritedFeatures() });
   users.push(user);
   await save();
   return publicUser(user);

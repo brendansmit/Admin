@@ -114,8 +114,11 @@ test("an admin can add a guest, and a guest starts on ChangeMe1", async () => {
   guestId = user.id;
   assert.equal(user.role, "teacher");
   assert.equal(user.mustChangePassword, true);
-  // Nothing that talks to another service is handed out by default.
-  assert.deepEqual(user.features, { inkheron: false, sync: false });
+  // Nothing that talks to another service is handed out by default. The two
+  // outward flags only. The tab flags are asserted where they matter,
+  // and pinning the whole set here breaks every time one is added.
+  assert.equal(user.features.inkheron, false);
+  assert.equal(user.features.sync, false);
 
   const { response } = await login("sarah", "ChangeMe1");
   assert.equal(response.status, 200);
@@ -250,10 +253,12 @@ test("every account carries its own dataset, and only mine is the original", asy
 test("an old cadence flag is read as the sync flag", async () => {
   const { publicUser } = await import("../src/users.js");
   const asOn = publicUser({ id: "a", name: "A", role: "teacher", features: { cadence: true } });
-  assert.deepEqual(asOn.features, { inkheron: false, sync: true });
+  assert.equal(asOn.features.sync, true);
+  assert.equal(asOn.features.cadence, undefined);
 
   const asOff = publicUser({ id: "b", name: "B", role: "teacher", features: { cadence: false } });
-  assert.deepEqual(asOff.features, { inkheron: false, sync: false });
+  assert.equal(asOff.features.sync, false);
+  assert.equal(asOff.features.cadence, undefined);
 });
 
 // ── Stage 5: opening somebody else's account ─────────────────────────────────
@@ -287,7 +292,8 @@ test("opening an account changes whoami and nothing about who I am", async () =>
   assert.equal(seen.name, "Ilse");
   assert.equal(seen.role, "teacher");
   assert.equal(seen.dataset, ilseId);
-  assert.deepEqual(seen.features, { inkheron: false, sync: false });
+  assert.equal(seen.features.inkheron, false);
+  assert.equal(seen.features.sync, false);
   assert.equal(seen.actingAs.byName, "Brendan");
 
   // And the session is still mine, which is what the page says at the top.
