@@ -1,6 +1,8 @@
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 
+import { constantTimeEqual } from "./passwords.js";
 import { readStore, updateStore } from "./storage.js";
+import { findById, initUsers, listUsers, publicUser, validateLogin } from "./users.js";
 
 const sessionCookieName = "ih_admin_session";
 const sessions = new Map();
@@ -10,34 +12,8 @@ function cookieSecret() {
   return process.env.SESSION_SECRET || process.env.ADMIN_TOKEN || "dev-session-secret";
 }
 
-// The password used to live in the pm2 env file, which meant changing it meant
-// editing a config and restarting. It now lives in the store as a scrypt hash,
-// so the Settings page can change it. Delete the "auth" block from store.json
-// to put it back to the initial password below.
-const initialPassword = "ChangeMe1";
-
-let passwordHash = null;
-
-function hashPassword(password, salt = randomBytes(16).toString("hex")) {
-  return `${salt}:${scryptSync(String(password), salt, 64).toString("hex")}`;
-}
-
-function hashMatches(password, stored) {
-  const [salt, digest] = String(stored || "").split(":");
-  if (!salt || !digest) {
-    return false;
-  }
-  return constantTimeEqual(scryptSync(String(password), salt, 64).toString("hex"), digest);
-}
-
 function sign(value) {
   return createHmac("sha256", cookieSecret()).update(value).digest("base64url");
-}
-
-function constantTimeEqual(left, right) {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }
 
 function parseCookies(header = "") {
@@ -52,10 +28,12 @@ function parseCookies(header = "") {
   return cookies;
 }
 
-function createSession() {
+// A session belongs to one account now, so signing one person out leaves
+// everybody else where they were.
+function createSession(userId) {
   const id = randomBytes(32).toString("base64url");
   const expiresAt = Date.now() + sessionTtlMs;
-  sessions.set(id, { expiresAt });
+  sessions.set(id, { expiresAt, userId });
   savingSessions();
   return `${id}.${sign(id)}`;
 }
@@ -67,6 +45,16 @@ function clearExpiredSessions() {
       sessions.delete(id);
     }
   }
+}
+
+/** Closes every session of one account and leaves the rest alone. */
+function clearSessionsFor(userId) {
+  for (const [id, session] of sessions) {
+    if (session.userId === userId) {
+      sessions.delete(id);
+    }
+  }
+  savingSessions();
 }
 
 function sessionFromRequest(req) {
@@ -87,7 +75,16 @@ function sessionFromRequest(req) {
     return null;
   }
 
-  return { id, ...session };
+  // An account that has been deleted or switched off stops being a way in the
+  // moment it changes, without waiting for the cookie to run out.
+  const user = findById(session.userId);
+  if (!user || user.disabled) {
+    sessions.delete(id);
+    savingSessions();
+    return null;
+  }
+
+  return { id, expiresAt: session.expiresAt, userId: session.userId, user };
 }
 
 function requireSession(req) {
@@ -100,48 +97,43 @@ function requireSession(req) {
   return session;
 }
 
-function validatePassword(password) {
-  return hashMatches(password, passwordHash);
-}
-
-async function setPassword(password) {
-  const next = hashPassword(password);
-  await updateStore((store) => {
-    store.auth = { ...(store.auth || {}), passwordHash: next, updatedAt: new Date().toISOString() };
-  });
-  passwordHash = next;
-  // Every other device is now holding a session that was opened with the old
-  // password, so none of them should stay open.
-  sessions.clear();
-  await persistSessions();
-}
-
-function passwordIsInitial() {
-  return hashMatches(initialPassword, passwordHash);
+function requireAdmin(req) {
+  const session = requireSession(req);
+  if (session.user.role !== "admin") {
+    const error = new Error("Not allowed");
+    error.statusCode = 403;
+    throw error;
+  }
+  return session;
 }
 
 /**
- * Loads the password and any sessions left over from before a restart. Must be
+ * Loads the accounts and any sessions left over from before a restart. Must be
  * awaited before the server starts listening.
  */
 async function initAuth() {
+  await initUsers();
   const store = await readStore();
-  passwordHash = store.auth?.passwordHash || null;
-  if (!passwordHash) {
-    await setPassword(initialPassword);
-  }
   const now = Date.now();
+  // Sessions from before accounts existed carry no owner. They belong to the
+  // one account the shared password became, so a deploy does not sign me out.
+  const fallback = listUsers().find((user) => user.role === "admin")?.id || null;
   for (const session of store.sessions || []) {
     if (session?.id && session.expiresAt > now) {
-      sessions.set(session.id, { expiresAt: session.expiresAt });
+      sessions.set(session.id, { expiresAt: session.expiresAt, userId: session.userId || fallback });
     }
   }
+  await persistSessions();
 }
 
 async function persistSessions() {
   // Sessions used to live only in memory, so every restart signed you out and
   // asked for the password again. They now survive one.
-  const open = [...sessions.entries()].map(([id, session]) => ({ id, expiresAt: session.expiresAt }));
+  const open = [...sessions.entries()].map(([id, session]) => ({
+    id,
+    expiresAt: session.expiresAt,
+    userId: session.userId
+  }));
   await updateStore((store) => {
     store.sessions = open;
   });
@@ -168,5 +160,19 @@ function destroySession(req) {
   }
 }
 
-export { createSession, destroySession, initAuth, passwordIsInitial, requireSession, sessionCookie, sessionFromRequest, setPassword, validatePassword };
+function sessionUser(req) {
+  return publicUser(sessionFromRequest(req)?.user || null);
+}
 
+export {
+  clearSessionsFor,
+  createSession,
+  destroySession,
+  initAuth,
+  requireAdmin,
+  requireSession,
+  sessionCookie,
+  sessionFromRequest,
+  sessionUser,
+  validateLogin
+};

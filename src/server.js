@@ -4,27 +4,38 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { updateStore } from "./storage.js";
 import {
+  clearSessionsFor,
   createSession,
   destroySession,
   initAuth,
-  passwordIsInitial,
+  requireAdmin,
   requireSession,
   sessionCookie,
   sessionFromRequest,
-  setPassword,
-  validatePassword
+  sessionUser,
+  validateLogin
 } from "./auth.js";
+import {
+  addUser,
+  listUsers,
+  removeUser,
+  resetUserPassword,
+  setUserPassword,
+  updateUser,
+  validateUserPassword
+} from "./users.js";
 
-// This service used to be the whole admin site. Grade Importer now sits at the
-// root of admin.inkheron.app, so all that is left here is the login gate that
-// nginx checks with auth_request, the password form behind it, and the
-// ServerChan key, which is parked until something is wired to send with it.
+// This service used to be the whole admin site. Merit now sits at the root of
+// admin.inkheron.app, so all that is left here is the login gate that nginx
+// checks with auth_request, the accounts behind it, and the ServerChan key,
+// which is parked until something is wired to send with it.
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const rootDir = join(__dirname, "..");
 const publicDir = join(rootDir, "public");
 
 const port = Number.parseInt(process.env.PORT || "3468", 10);
+const minPasswordLength = 8;
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
@@ -61,6 +72,16 @@ async function serveLoginPage(res) {
   res.end(body);
 }
 
+// A new session on the way out, so whoever just changed a password is not the
+// one person the change signs out.
+function sendSessionCookie(req, res, userId, payload = { ok: true }) {
+  res.writeHead(200, {
+    "content-type": "application/json; charset=utf-8",
+    "set-cookie": sessionCookie(req, createSession(userId))
+  });
+  res.end(JSON.stringify(payload));
+}
+
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
@@ -75,58 +96,96 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/session" && req.method === "GET") {
-      const authenticated = Boolean(sessionFromRequest(req));
-      sendJson(res, 200, { authenticated, passwordIsInitial: authenticated && passwordIsInitial() });
+      const user = sessionUser(req);
+      sendJson(res, 200, {
+        authenticated: Boolean(user),
+        user,
+        mustChangePassword: Boolean(user?.mustChangePassword),
+        passwordIsInitial: Boolean(user?.passwordIsInitial)
+      });
+      return;
+    }
+
+    // Merit asks this one, forwarding the browser's cookie, so it knows whose
+    // data to open rather than trusting nginx to have checked something.
+    if (url.pathname === "/api/whoami" && req.method === "GET") {
+      const user = sessionUser(req);
+      if (!user) {
+        sendJson(res, 401, { error: "not_logged_in" });
+        return;
+      }
+      sendJson(res, 200, user);
       return;
     }
 
     if (url.pathname === "/api/password" && req.method === "POST") {
-      requireSession(req);
+      const session = requireSession(req);
       const body = await readJsonBody(req);
-      if (!validatePassword(body.currentPassword)) {
+      if (!validateUserPassword(session.user, body.currentPassword)) {
         sendJson(res, 401, { error: "invalid_password" });
         return;
       }
       const next = String(body.newPassword || "");
-      if (next.length < 8) {
+      if (next.length < minPasswordLength) {
         sendJson(res, 400, { error: "too_short" });
         return;
       }
-      await setPassword(next);
-      // Changing it closes every session, this one included, so hand back a
-      // fresh one rather than bouncing the person who just changed it.
-      const session = createSession();
-      res.writeHead(200, {
-        "content-type": "application/json; charset=utf-8",
-        "set-cookie": sessionCookie(req, session)
-      });
-      res.end(JSON.stringify({ ok: true }));
+      await setUserPassword(session.userId, next);
+      // Their other devices are holding sessions opened with the old password.
+      // Nobody else's are touched.
+      clearSessionsFor(session.userId);
+      sendSessionCookie(req, res, session.userId);
+      return;
+    }
+
+    // The one case where the current password is not asked for: they typed it
+    // seconds ago to get here, and the account cannot be used until it changes.
+    if (url.pathname === "/api/password/first" && req.method === "POST") {
+      const session = requireSession(req);
+      if (!session.user.mustChangePassword) {
+        sendJson(res, 400, { error: "not_required" });
+        return;
+      }
+      const body = await readJsonBody(req);
+      const next = String(body.newPassword || "");
+      if (next.length < minPasswordLength) {
+        sendJson(res, 400, { error: "too_short" });
+        return;
+      }
+      await setUserPassword(session.userId, next);
+      clearSessionsFor(session.userId);
+      sendSessionCookie(req, res, session.userId);
       return;
     }
 
     if (url.pathname === "/api/auth-check" && req.method === "GET") {
-      if (sessionFromRequest(req)) {
-        res.writeHead(200);
-      } else {
+      const session = sessionFromRequest(req);
+      // A starter password is not a way in. They go back to the login page,
+      // which shows them the change-password form instead.
+      if (!session || session.user.mustChangePassword) {
         res.writeHead(401);
+        res.end();
+        return;
       }
+      // Handed back in case nginx is ever told to forward it on.
+      res.writeHead(200, { "x-merit-user": session.userId });
       res.end();
       return;
     }
 
     if (url.pathname === "/api/login" && req.method === "POST") {
       const body = await readJsonBody(req);
-      if (!validatePassword(body.password)) {
-        sendJson(res, 401, { error: "invalid_password" });
+      const user = validateLogin(body.name, body.password);
+      if (!user) {
+        // A disabled account and a wrong password fail the same way, so the
+        // form cannot be used to find out which accounts exist.
+        sendJson(res, 401, { error: "invalid_login" });
         return;
       }
-
-      const session = createSession();
-      res.writeHead(200, {
-        "content-type": "application/json; charset=utf-8",
-        "set-cookie": sessionCookie(req, session)
+      sendSessionCookie(req, res, user.id, {
+        ok: true,
+        mustChangePassword: Boolean(user.mustChangePassword)
       });
-      res.end(JSON.stringify({ ok: true }));
       return;
     }
 
@@ -138,6 +197,60 @@ const server = createServer(async (req, res) => {
       });
       res.end(JSON.stringify({ ok: true }));
       return;
+    }
+
+    if (url.pathname === "/api/users" && req.method === "GET") {
+      const session = requireAdmin(req);
+      sendJson(res, 200, { users: listUsers(), you: session.userId });
+      return;
+    }
+
+    if (url.pathname === "/api/users" && req.method === "POST") {
+      requireAdmin(req);
+      const body = await readJsonBody(req);
+      const user = await addUser({ name: body.name, role: body.role, features: body.features });
+      sendJson(res, 200, { ok: true, user });
+      return;
+    }
+
+    const userRoute = url.pathname.match(/^\/api\/users\/([^/]+)(?:\/(reset))?$/);
+    if (userRoute) {
+      const session = requireAdmin(req);
+      const id = decodeURIComponent(userRoute[1]);
+      const action = userRoute[2];
+
+      if (action === "reset" && req.method === "POST") {
+        const user = await resetUserPassword(id);
+        clearSessionsFor(id);
+        sendJson(res, 200, { ok: true, user });
+        return;
+      }
+
+      if (!action && req.method === "POST") {
+        const body = await readJsonBody(req);
+        // Taking your own way in is never a mistake worth letting through.
+        if (id === session.userId && (body.disabled === true || body.role === "teacher")) {
+          sendJson(res, 400, { error: "not_yourself" });
+          return;
+        }
+        const user = await updateUser(id, body);
+        if (user.disabled) {
+          clearSessionsFor(id);
+        }
+        sendJson(res, 200, { ok: true, user });
+        return;
+      }
+
+      if (!action && req.method === "DELETE") {
+        if (id === session.userId) {
+          sendJson(res, 400, { error: "not_yourself" });
+          return;
+        }
+        await removeUser(id);
+        clearSessionsFor(id);
+        sendJson(res, 200, { ok: true });
+        return;
+      }
     }
 
     if (url.pathname === "/api/settings/serverchan" && req.method === "POST") {
@@ -162,7 +275,7 @@ const server = createServer(async (req, res) => {
     }
 
     // Nothing else is served from here any more. nginx sends the rest of the
-    // site to Grade Importer, so anything that lands here is a stale link.
+    // site to Merit, so anything that lands here is a stale link.
     redirect(res, "/");
   } catch (error) {
     if (error.statusCode) {
@@ -175,7 +288,7 @@ const server = createServer(async (req, res) => {
 });
 
 if (process.env.NODE_ENV !== "test") {
-  // The password and any sessions left over from before a restart have to be
+  // The accounts and any sessions left over from before a restart have to be
   // loaded before the first request can be judged.
   await initAuth();
   server.listen(port, "127.0.0.1", () => {

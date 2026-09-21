@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>InkHeron Admin Login</title>
+    <title>Merit Login</title>
     <style>
       :root {
         color-scheme: light;
@@ -113,44 +113,137 @@
         color: var(--warn);
         margin: 0;
       }
+
+      .login-note {
+        color: var(--muted);
+        font-size: 0.88rem;
+        margin: 0;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
     </style>
   </head>
   <body>
     <main class="login-shell">
       <form class="login-panel" id="loginForm">
         <div class="brand">
-          <span class="brand-mark">IH</span>
+          <span class="brand-mark">M</span>
           <div>
-            <strong>InkHeron</strong>
-            <span>Admin</span>
+            <strong>Merit</strong>
+            <span>Gradebook</span>
           </div>
         </div>
-        <h1>Admin login</h1>
+        <h1>Log in</h1>
+        <div>
+          <label for="name">Name</label>
+          <input id="name" name="name" type="text" autocomplete="username" required autofocus>
+        </div>
         <div>
           <label for="password">Password</label>
-          <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
         </div>
         <button type="submit">Log in</button>
         <p class="login-error" id="loginError" role="alert"></p>
+      </form>
+
+      <!-- Shown instead of the login form when the account is still on the
+           starter password. There is no way past it: the gate refuses an
+           account that has not chosen its own password yet. -->
+      <form class="login-panel" id="changeForm" hidden>
+        <div class="brand">
+          <span class="brand-mark">M</span>
+          <div>
+            <strong>Merit</strong>
+            <span>Gradebook</span>
+          </div>
+        </div>
+        <h1>Choose a password</h1>
+        <p class="login-note" id="changeWho">This account is still on the starter password.</p>
+        <div>
+          <label for="newPassword">New password</label>
+          <input id="newPassword" name="newPassword" type="password" autocomplete="new-password" minlength="8" required>
+        </div>
+        <div>
+          <label for="confirmPassword">Again</label>
+          <input id="confirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required>
+        </div>
+        <button type="submit">Save and continue</button>
+        <p class="login-error" id="changeError" role="alert"></p>
       </form>
     </main>
     <script type="module">
       const loginForm = document.querySelector("#loginForm");
       const loginError = document.querySelector("#loginError");
+      const changeForm = document.querySelector("#changeForm");
+      const changeError = document.querySelector("#changeError");
+      const changeWho = document.querySelector("#changeWho");
+
+      function showChange(name) {
+        loginForm.hidden = true;
+        changeForm.hidden = false;
+        changeWho.textContent = name
+          ? `Hello ${name}. This account is still on the starter password.`
+          : "This account is still on the starter password.";
+        document.querySelector("#newPassword").focus();
+      }
+
+      // Landing here already logged in means the gate turned them back, and
+      // the only reason it does that is a password still to be chosen.
+      const session = await fetch("/api/session").then((r) => r.json()).catch(() => null);
+      if (session?.authenticated && session.mustChangePassword) {
+        showChange(session.user?.name);
+      }
 
       loginForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         loginError.textContent = "";
-        const password = new FormData(loginForm).get("password");
+        const form = new FormData(loginForm);
 
         const response = await fetch("/api/login", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ password })
+          body: JSON.stringify({ name: form.get("name"), password: form.get("password") })
         });
 
         if (!response.ok) {
-          loginError.textContent = "Wrong password";
+          loginError.textContent = "Wrong name or password";
+          return;
+        }
+
+        const result = await response.json();
+        if (result.mustChangePassword) {
+          showChange(form.get("name"));
+          return;
+        }
+
+        window.location.href = "/";
+      });
+
+      changeForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        changeError.textContent = "";
+        const form = new FormData(changeForm);
+        const newPassword = String(form.get("newPassword") || "");
+
+        if (newPassword.length < 8) {
+          changeError.textContent = "At least 8 characters";
+          return;
+        }
+        if (newPassword !== String(form.get("confirmPassword") || "")) {
+          changeError.textContent = "Those two do not match";
+          return;
+        }
+
+        const response = await fetch("/api/password/first", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ newPassword })
+        });
+
+        if (!response.ok) {
+          changeError.textContent = "Could not save that password";
           return;
         }
 
