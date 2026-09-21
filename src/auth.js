@@ -148,7 +148,8 @@ function stopActing(sessionId) {
 /** Refuses anything an account should only do as itself. */
 function refuseWhileActing(session) {
   if (session?.acting) {
-    const error = new Error("Stop viewing the other account first");
+    // A code rather than a sentence, because the page turns it into one.
+    const error = new Error("acting");
     error.statusCode = 409;
     throw error;
   }
