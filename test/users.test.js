@@ -410,3 +410,41 @@ test("an account switched off while I am in it ends the view by itself", async (
   assert.equal(back.actingAs, null);
   await updateUser(ilseId, { disabled: false });
 });
+
+test("a new account copies the last teacher's flags", async () => {
+  const add = async (name) => {
+    const made = await call("/api/users", { method: "POST", cookie: ownerCookie, body: { name } });
+    return (await made.json()).user;
+  };
+
+  // Every teacher so far was made from the defaults, so this one is too: the
+  // tabs on, and nothing that reaches another service.
+  const first = await add("Inherit-one");
+  assert.equal(first.features.attendance, true);
+  assert.equal(first.features.sync, false);
+
+  await call("/api/users/" + first.id, {
+    method: "POST",
+    cookie: ownerCookie,
+    body: { features: { attendance: false, templates: false, sync: true } }
+  });
+
+  // Which is what the next one starts from, rather than the defaults again.
+  const second = await add("Inherit-two");
+  assert.equal(second.features.attendance, false);
+  assert.equal(second.features.templates, false);
+  assert.equal(second.features.sync, true);
+  assert.equal(second.features.roster, true);
+
+  // An admin is not a teacher and is never the one copied.
+  assert.notEqual(second.dataset, first.dataset);
+});
+
+test("an account written before tab flags existed keeps every tab", async () => {
+  const { publicUser } = await import("../src/users.js");
+  const old = publicUser({ id: "o", name: "O", role: "teacher", features: { inkheron: true } });
+  assert.equal(old.features.attendance, true);
+  assert.equal(old.features.templates, true);
+  assert.equal(old.features.inkheron, true);
+  assert.equal(old.features.sync, false);
+});
