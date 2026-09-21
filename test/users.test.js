@@ -255,3 +255,152 @@ test("an old cadence flag is read as the sync flag", async () => {
   const asOff = publicUser({ id: "b", name: "B", role: "teacher", features: { cadence: false } });
   assert.deepEqual(asOff.features, { inkheron: false, sync: false });
 });
+
+// ── Stage 5: opening somebody else's account ─────────────────────────────────
+// The point of all of it is that Merit asks whoami on every request, so a
+// session that is acting opens her gradebook with her flags and nothing else
+// has to know about it.
+
+let ilseId = "";
+
+test("a teacher to open, and only an admin may open it", async () => {
+  const made = await call("/api/users", {
+    method: "POST",
+    cookie: ownerCookie,
+    body: { name: "Ilse" }
+  }).then((r) => r.json());
+  ilseId = made.user.id;
+
+  const hers = await login("Ilse", "ChangeMe1");
+  const mine = await who();
+  const refused = await call(`/api/act-as/${mine}`, { method: "POST", cookie: hers.cookie });
+  assert.equal(refused.status, 403);
+});
+
+test("opening an account changes whoami and nothing about who I am", async () => {
+  const started = await call(`/api/act-as/${ilseId}`, { method: "POST", cookie: ownerCookie });
+  assert.equal(started.status, 200);
+  assert.equal((await started.json()).name, "Ilse");
+
+  // What Merit reads. Her dataset and her flags, which is the whole mechanism.
+  const seen = await call("/api/whoami", { cookie: ownerCookie }).then((r) => r.json());
+  assert.equal(seen.name, "Ilse");
+  assert.equal(seen.role, "teacher");
+  assert.equal(seen.dataset, ilseId);
+  assert.deepEqual(seen.features, { inkheron: false, sync: false });
+  assert.equal(seen.actingAs.byName, "Brendan");
+
+  // And the session is still mine, which is what the page says at the top.
+  const mine = await call("/api/session", { cookie: ownerCookie }).then((r) => r.json());
+  assert.equal(mine.user.name, "Brendan");
+  assert.equal(mine.actingAs.name, "Ilse");
+});
+
+test("while acting, nothing that belongs to my own account is allowed", async () => {
+  for (const [path, method] of [["/api/users", "GET"], ["/api/users", "POST"], [`/api/users/${ilseId}`, "POST"]]) {
+    const response = await call(path, { method, cookie: ownerCookie, body: method === "GET" ? undefined : {} });
+    assert.equal(response.status, 409, `${method} ${path}`);
+  }
+
+  const password = await call("/api/password", {
+    method: "POST",
+    cookie: ownerCookie,
+    body: { currentPassword: "owner-password", newPassword: "another-password" }
+  });
+  assert.equal(password.status, 409);
+
+  // And a borrowed account is not a way to reach a second one.
+  const again = await call(`/api/act-as/${ilseId}`, { method: "POST", cookie: ownerCookie });
+  assert.equal(again.status, 409);
+});
+
+test("stopping puts me back", async () => {
+  const stopped = await call("/api/act-as/stop", { method: "POST", cookie: ownerCookie });
+  assert.equal(stopped.status, 200);
+  assert.equal((await stopped.json()).stopped, true);
+
+  const seen = await call("/api/whoami", { cookie: ownerCookie }).then((r) => r.json());
+  assert.equal(seen.name, "Brendan");
+  assert.equal(seen.dataset, "default");
+  assert.equal(seen.actingAs, null);
+  assert.equal((await call("/api/users", { cookie: ownerCookie })).status, 200);
+});
+
+test("she is told, with a start and an end, and told once", async () => {
+  const hers = await login("Ilse", "ChangeMe1");
+  const seen = await call("/api/session", { cookie: hers.cookie }).then((r) => r.json());
+  assert.equal(seen.accessNotices.length, 1);
+  const [notice] = seen.accessNotices;
+  assert.equal(notice.byName, "Brendan");
+  assert.equal(notice.open, false);
+  assert.ok(Date.parse(notice.startedAt) > 0);
+  assert.ok(Date.parse(notice.endedAt) >= Date.parse(notice.startedAt));
+
+  await call("/api/access-notices/seen", { method: "POST", cookie: hers.cookie });
+  const after = await call("/api/session", { cookie: hers.cookie }).then((r) => r.json());
+  assert.deepEqual(after.accessNotices, []);
+
+  // And it is hers alone. Mine says nothing about having done it.
+  const mine = await call("/api/session", { cookie: ownerCookie }).then((r) => r.json());
+  assert.deepEqual(mine.accessNotices, []);
+});
+
+test("somebody in there right now says so, and dismissing does not hide them", async () => {
+  await call(`/api/act-as/${ilseId}`, { method: "POST", cookie: ownerCookie });
+  const hers = await login("Ilse", "ChangeMe1");
+
+  const seen = await call("/api/session", { cookie: hers.cookie }).then((r) => r.json());
+  assert.equal(seen.accessNotices.length, 1);
+  assert.equal(seen.accessNotices[0].open, true);
+  assert.equal(seen.accessNotices[0].endedAt, null);
+
+  await call("/api/access-notices/seen", { method: "POST", cookie: hers.cookie });
+  const after = await call("/api/session", { cookie: hers.cookie }).then((r) => r.json());
+  assert.equal(after.accessNotices.length, 1, "still there while it is still happening");
+
+  await call("/api/act-as/stop", { method: "POST", cookie: ownerCookie });
+});
+
+test("logging out closes the row rather than leaving it open", async () => {
+  const { allAccess } = await import("../src/acting.js");
+  await call(`/api/act-as/${ilseId}`, { method: "POST", cookie: ownerCookie });
+
+  const spare = await login("Brendan", "owner-password");
+  await call("/api/logout", { method: "POST", cookie: ownerCookie });
+
+  const open = allAccess().filter((row) => row.userId === ilseId && !row.endedAt);
+  assert.deepEqual(open, [], "no row left open by a browser that simply left");
+  ownerCookie = spare.cookie;
+});
+
+test("an admin cannot be opened, and neither can I open myself", async () => {
+  const self = await call(`/api/act-as/${await who()}`, { method: "POST", cookie: ownerCookie });
+  assert.equal(self.status, 400);
+  assert.equal((await self.json()).error, "not_yourself");
+
+  const other = await call("/api/users", {
+    method: "POST",
+    cookie: ownerCookie,
+    body: { name: "Bea", role: "admin" }
+  }).then((r) => r.json());
+  const refused = await call(`/api/act-as/${other.user.id}`, { method: "POST", cookie: ownerCookie });
+  assert.equal(refused.status, 400);
+  assert.equal((await refused.json()).error, "not_an_admin");
+});
+
+test("an account switched off while I am in it ends the view by itself", async () => {
+  await call(`/api/act-as/${ilseId}`, { method: "POST", cookie: ownerCookie });
+  assert.equal((await call("/api/whoami", { cookie: ownerCookie }).then((r) => r.json())).name, "Ilse");
+
+  // Another admin does it, because mine is refused while acting.
+  const bea = await call("/api/users", { cookie: ownerCookie });
+  assert.equal(bea.status, 409);
+
+  const { updateUser } = await import("../src/users.js");
+  await updateUser(ilseId, { disabled: true });
+
+  const back = await call("/api/whoami", { cookie: ownerCookie }).then((r) => r.json());
+  assert.equal(back.name, "Brendan", "back in my own account rather than stuck");
+  assert.equal(back.actingAs, null);
+  await updateUser(ilseId, { disabled: false });
+});

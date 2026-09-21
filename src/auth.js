@@ -1,5 +1,6 @@
 import { createHmac, randomBytes } from "node:crypto";
 
+import { closeAccess, initAccessLog, openAccess } from "./acting.js";
 import { constantTimeEqual } from "./passwords.js";
 import { readStore, updateStore } from "./storage.js";
 import { findById, initUsers, listUsers, publicUser, validateLogin } from "./users.js";
@@ -42,6 +43,11 @@ function clearExpiredSessions() {
   const now = Date.now();
   for (const [id, session] of sessions) {
     if (session.expiresAt <= now) {
+      // A browser that was simply closed never asked to stop, so the row is
+      // closed here instead of being left open for a fortnight.
+      if (session.accessId) {
+        closeAccess(session.accessId);
+      }
       sessions.delete(id);
     }
   }
@@ -51,6 +57,9 @@ function clearExpiredSessions() {
 function clearSessionsFor(userId) {
   for (const [id, session] of sessions) {
     if (session.userId === userId) {
+      if (session.accessId) {
+        closeAccess(session.accessId);
+      }
       sessions.delete(id);
     }
   }
@@ -84,7 +93,66 @@ function sessionFromRequest(req) {
     return null;
   }
 
-  return { id, expiresAt: session.expiresAt, userId: session.userId, user };
+  // Whose account this session is looking at, when that is not its own. The
+  // session still belongs to whoever logged in: acting is a view, never a way
+  // to become somebody, so nothing below reads role off the borrowed account.
+  let acting = null;
+  if (session.actingAs) {
+    const target = findById(session.actingAs);
+    if (target && !target.disabled) {
+      acting = { userId: target.id, user: target, since: session.actingSince, accessId: session.accessId };
+    } else {
+      // Deleted or switched off while I was in there. The view ends by itself
+      // rather than falling back to my own account without saying so.
+      stopActing(id);
+    }
+  }
+
+  return { id, expiresAt: session.expiresAt, userId: session.userId, user, acting };
+}
+
+// ── Opening somebody else's account ───────────────────────────────────────────
+// An admin looks at a teacher's Merit from inside their own session. No second
+// password, no second login, and the account being looked at is told afterwards.
+
+function startActing(sessionId, target, by) {
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return null;
+  }
+  if (session.actingAs) {
+    stopActing(sessionId);
+  }
+  session.actingAs = target.id;
+  session.actingSince = new Date().toISOString();
+  session.accessId = openAccess({ byId: by.id, byName: by.name, userId: target.id });
+  savingSessions();
+  return session.actingSince;
+}
+
+function stopActing(sessionId) {
+  const session = sessions.get(sessionId);
+  if (!session || !session.actingAs) {
+    return false;
+  }
+  if (session.accessId) {
+    closeAccess(session.accessId);
+  }
+  delete session.actingAs;
+  delete session.actingSince;
+  delete session.accessId;
+  savingSessions();
+  return true;
+}
+
+/** Refuses anything an account should only do as itself. */
+function refuseWhileActing(session) {
+  if (session?.acting) {
+    const error = new Error("Stop viewing the other account first");
+    error.statusCode = 409;
+    throw error;
+  }
+  return session;
 }
 
 function requireSession(req) {
@@ -113,6 +181,7 @@ function requireAdmin(req) {
  */
 async function initAuth() {
   await initUsers();
+  await initAccessLog();
   const store = await readStore();
   const now = Date.now();
   // Sessions from before accounts existed carry no owner. They belong to the
@@ -120,7 +189,13 @@ async function initAuth() {
   const fallback = listUsers().find((user) => user.role === "admin")?.id || null;
   for (const session of store.sessions || []) {
     if (session?.id && session.expiresAt > now) {
-      sessions.set(session.id, { expiresAt: session.expiresAt, userId: session.userId || fallback });
+      sessions.set(session.id, {
+        expiresAt: session.expiresAt,
+        userId: session.userId || fallback,
+        actingAs: session.actingAs,
+        actingSince: session.actingSince,
+        accessId: session.accessId
+      });
     }
   }
   await persistSessions();
@@ -132,7 +207,10 @@ async function persistSessions() {
   const open = [...sessions.entries()].map(([id, session]) => ({
     id,
     expiresAt: session.expiresAt,
-    userId: session.userId
+    userId: session.userId,
+    actingAs: session.actingAs,
+    actingSince: session.actingSince,
+    accessId: session.accessId
   }));
   await updateStore((store) => {
     store.sessions = open;
@@ -155,17 +233,26 @@ function destroySession(req) {
   const raw = parseCookies(req.headers.cookie)[sessionCookieName];
   if (raw) {
     const [id] = raw.split(".");
+    const session = sessions.get(id);
+    if (session?.accessId) {
+      closeAccess(session.accessId);
+    }
     sessions.delete(id);
     savingSessions();
   }
 }
 
+/** The account this session is looking at, which is its own unless acting. */
 function sessionUser(req) {
-  return publicUser(sessionFromRequest(req)?.user || null);
+  const session = sessionFromRequest(req);
+  return publicUser(session?.acting?.user || session?.user || null);
 }
 
 export {
   clearSessionsFor,
+  refuseWhileActing,
+  startActing,
+  stopActing,
   createSession,
   destroySession,
   initAuth,

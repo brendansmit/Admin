@@ -3,13 +3,17 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { updateStore } from "./storage.js";
+import { markSeen, noticesFor } from "./acting.js";
 import {
   clearSessionsFor,
   createSession,
   destroySession,
   initAuth,
+  refuseWhileActing,
   requireAdmin,
   requireSession,
+  startActing,
+  stopActing,
   sessionCookie,
   sessionFromRequest,
   sessionUser,
@@ -17,7 +21,9 @@ import {
 } from "./auth.js";
 import {
   addUser,
+  findById,
   listUsers,
+  publicUser,
   removeUser,
   resetUserPassword,
   setUserPassword,
@@ -96,12 +102,21 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/session" && req.method === "GET") {
-      const user = sessionUser(req);
+      // Deliberately the account that logged in rather than whichever one it is
+      // looking at, because this is what the page uses to say who you are.
+      const session = sessionFromRequest(req);
+      const user = publicUser(session?.user || null);
       sendJson(res, 200, {
         authenticated: Boolean(user),
         user,
         mustChangePassword: Boolean(user?.mustChangePassword),
-        passwordIsInitial: Boolean(user?.passwordIsInitial)
+        passwordIsInitial: Boolean(user?.passwordIsInitial),
+        actingAs: session?.acting
+          ? { id: session.acting.userId, name: session.acting.user.name, since: session.acting.since }
+          : null,
+        // Times somebody opened this account. Built from the log rather than
+        // from anything the browser that did it chose to report.
+        accessNotices: user ? noticesFor(session.userId) : []
       });
       return;
     }
@@ -109,17 +124,23 @@ const server = createServer(async (req, res) => {
     // Merit asks this one, forwarding the browser's cookie, so it knows whose
     // data to open rather than trusting nginx to have checked something.
     if (url.pathname === "/api/whoami" && req.method === "GET") {
+      const session = sessionFromRequest(req);
       const user = sessionUser(req);
       if (!user) {
         sendJson(res, 401, { error: "not_logged_in" });
         return;
       }
-      sendJson(res, 200, user);
+      // Merit reads dataset and features off this, so while acting it opens her
+      // gradebook with her flags. actingAs is what makes the strip appear.
+      sendJson(res, 200, {
+        ...user,
+        actingAs: session?.acting ? { byName: session.user.name, since: session.acting.since } : null
+      });
       return;
     }
 
     if (url.pathname === "/api/password" && req.method === "POST") {
-      const session = requireSession(req);
+      const session = refuseWhileActing(requireSession(req));
       const body = await readJsonBody(req);
       if (!validateUserPassword(session.user, body.currentPassword)) {
         sendJson(res, 401, { error: "invalid_password" });
@@ -141,7 +162,7 @@ const server = createServer(async (req, res) => {
     // The one case where the current password is not asked for: they typed it
     // seconds ago to get here, and the account cannot be used until it changes.
     if (url.pathname === "/api/password/first" && req.method === "POST") {
-      const session = requireSession(req);
+      const session = refuseWhileActing(requireSession(req));
       if (!session.user.mustChangePassword) {
         sendJson(res, 400, { error: "not_required" });
         return;
@@ -200,13 +221,13 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/users" && req.method === "GET") {
-      const session = requireAdmin(req);
+      const session = refuseWhileActing(requireAdmin(req));
       sendJson(res, 200, { users: listUsers(), you: session.userId });
       return;
     }
 
     if (url.pathname === "/api/users" && req.method === "POST") {
-      requireAdmin(req);
+      refuseWhileActing(requireAdmin(req));
       const body = await readJsonBody(req);
       const user = await addUser({ name: body.name, role: body.role, features: body.features });
       sendJson(res, 200, { ok: true, user });
@@ -215,7 +236,7 @@ const server = createServer(async (req, res) => {
 
     const userRoute = url.pathname.match(/^\/api\/users\/([^/]+)(?:\/(reset))?$/);
     if (userRoute) {
-      const session = requireAdmin(req);
+      const session = refuseWhileActing(requireAdmin(req));
       const id = decodeURIComponent(userRoute[1]);
       const action = userRoute[2];
 
@@ -251,6 +272,46 @@ const server = createServer(async (req, res) => {
         sendJson(res, 200, { ok: true });
         return;
       }
+    }
+
+    // ── Opening somebody else's account ───────────────────────────────────────
+    // Inside my own session, so there is no second password to keep anywhere.
+    // The account being opened is told afterwards, from the log.
+
+    if (url.pathname === "/api/act-as/stop" && req.method === "POST") {
+      const session = requireSession(req);
+      sendJson(res, 200, { ok: true, stopped: stopActing(session.id) });
+      return;
+    }
+
+    const actRoute = url.pathname.match(/^\/api\/act-as\/([^/]+)$/);
+    if (actRoute && req.method === "POST") {
+      const session = refuseWhileActing(requireAdmin(req));
+      const id = decodeURIComponent(actRoute[1]);
+      const target = findById(id);
+      if (!target || target.disabled) {
+        sendJson(res, 404, { error: "no_such_user" });
+        return;
+      }
+      if (target.id === session.userId) {
+        sendJson(res, 400, { error: "not_yourself" });
+        return;
+      }
+      // An admin is not a support case, and opening one would be a way to reach
+      // the accounts page as somebody else.
+      if (target.role === "admin") {
+        sendJson(res, 400, { error: "not_an_admin" });
+        return;
+      }
+      const since = startActing(session.id, target, session.user);
+      sendJson(res, 200, { ok: true, name: target.name, since });
+      return;
+    }
+
+    if (url.pathname === "/api/access-notices/seen" && req.method === "POST") {
+      const session = refuseWhileActing(requireSession(req));
+      sendJson(res, 200, { ok: true, changed: markSeen(session.userId) });
+      return;
     }
 
     if (url.pathname === "/api/settings/serverchan" && req.method === "POST") {
